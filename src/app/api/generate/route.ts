@@ -21,12 +21,21 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         contents: [{
           parts: [{ text: `${systemPrompt}\n\nDescription: ${prompt}` }]
-        }]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          response_mime_type: "text/plain",
+        }
       })
     });
 
-    const data = await response.json();
-    const dbml = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!response.ok) {
+      const errorData = await response.json();
+      return NextResponse.json({ 
+        error: `Gemini API Error: ${response.statusText}`, 
+        details: errorData 
+      }, { status: response.status });
+    }
 
     if (!dbml) {
       throw new Error('Failed to generate schema');
