@@ -283,8 +283,23 @@ export default function Home() {
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} /><span>DBML Blueprint</span>
                 </div>
-                <div className="flex-grow overflow-auto bg-white border-2 border-slate-900 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900">
-                  <Editor value={dbmlInput} onValueChange={code => setDbmlInput(code)} highlight={code => dbmlHighlight(code)} padding={20} style={{ fontFamily: '"Geist Mono", monospace', fontSize: 13, minHeight: '100%', outline: 'none' }} className="dbml-editor text-slate-900" />
+                <div className="flex-grow overflow-hidden bg-white border-2 border-slate-900 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900 flex flex-col">
+                  <div className="flex-grow overflow-auto custom-scrollbar">
+                    <Editor
+                      value={dbmlInput}
+                      onValueChange={code => setDbmlInput(code)}
+                      highlight={code => dbmlHighlight(code)}
+                      padding={20}
+                      style={{
+                        fontFamily: '"Geist Mono", monospace',
+                        fontSize: 13,
+                        outline: 'none',
+                        color: '#1e293b',
+                        minHeight: '100%',
+                      }}
+                      className="dbml-editor text-slate-900"
+                    />
+                  </div>
                 </div>
               </div>
               {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px]"><AlertCircle size={14} /><span>{error}</span></div>}
