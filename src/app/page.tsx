@@ -1,14 +1,32 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
 import { useNodesState, useEdgesState } from 'reactflow';
+import Editor from 'react-simple-code-editor';
+// @ts-ignore
+import { highlight, languages } from 'prismjs/components/prism-core';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-sql';
+import 'prismjs/themes/prism-tomorrow.css'; // Dark theme base
+
 import { 
-  Loader2, Plus, Save, Download, Database, Trash2, 
-  Code, Eye, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus
+  Loader2, Save, Download, Database, Trash2, 
+  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus
 } from 'lucide-react';
+
+// Custom DBML-ish highlighting logic
+const dbmlHighlight = (code: string) => {
+  return highlight(code, {
+    ...languages.sql,
+    'keyword': /\b(Table|Ref|Enum|indexes|Project|Note|as|pk|unique|not null|increment)\b/i,
+    'string': /(['"])(?:(?!\1)[^\\\r\n]|\\.)*\1/,
+    'comment': /\/\/.*|(?:\/\*[\s\S]*?\*\/)/,
+    'class-name': /\b[A-Z_][a-z0-9_]*\b/,
+  }, 'dbml');
+};
 
 export default function Home() {
   const [schemas, setSchemas] = useState<Schema[]>([]);
@@ -23,7 +41,6 @@ export default function Home() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Load schemas on mount
   useEffect(() => {
     const saved = storage.getSchemas();
     setSchemas(saved);
@@ -33,20 +50,16 @@ export default function Home() {
     }
   }, []);
 
-  // Sync visual canvas when DBML changes
   useEffect(() => {
     const { nodes: newNodes, edges: newEdges } = parseDBML(dbmlInput);
     setNodes(newNodes);
     setEdges(newEdges);
   }, [dbmlInput, setNodes, setEdges]);
 
-  // 🔄 Autosave logic
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!currentSchema || !dbmlInput || dbmlInput === currentSchema.dbml) return;
-
     if (timerRef.current) clearTimeout(timerRef.current);
-
     setIsSaving(true);
     timerRef.current = setTimeout(() => {
       const updatedSchema = { ...currentSchema, dbml: dbmlInput, updatedAt: Date.now() };
@@ -54,8 +67,7 @@ export default function Home() {
       setSchemas(storage.getSchemas());
       setCurrentSchema(updatedSchema);
       setIsSaving(false);
-    }, 1500); // 1.5s debounce
-
+    }, 1500);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [dbmlInput, currentSchema]);
 
@@ -85,12 +97,9 @@ export default function Home() {
         body: JSON.stringify({ prompt: userInput }),
       });
       const data = await res.json();
-      
       if (res.ok && data.dbml) {
         const cleanDbml = data.dbml.replace(/```dbml|```/g, '').trim();
         setDbmlInput(cleanDbml);
-        
-        // If we are on an empty sketch, update its name/content
         if (currentSchema && !currentSchema.dbml) {
            const updated = { ...currentSchema, dbml: cleanDbml, updatedAt: Date.now() };
            storage.saveSchema(updated);
@@ -162,7 +171,6 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100">
-      {/* 1. Projects Sidebar (Left) */}
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-0'} border-r-2 border-slate-900 bg-[#f8f9fa] transition-all duration-300 flex flex-col overflow-hidden shrink-0`}>
         <div className="p-5 border-b-2 border-slate-900 flex justify-between items-center bg-white">
           <div className="flex items-center gap-2">
@@ -170,7 +178,6 @@ export default function Home() {
             <span className="font-bold text-lg tracking-tight text-slate-900">SchemaForge</span>
           </div>
         </div>
-
         <div className="flex-grow overflow-y-auto p-3 space-y-4">
           <button 
             onClick={handleNewSchema}
@@ -178,29 +185,17 @@ export default function Home() {
           >
             <FilePlus size={14} /> New Sketch
           </button>
-
           <div className="px-2 pt-2">
             <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Saved Sketches</h2>
             <div className="space-y-2">
               {schemas.map((s) => (
-                <div 
-                  key={s.id} 
-                  className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center ${
-                    currentSchema?.id === s.id 
-                    ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' 
-                    : 'bg-white border-slate-200 hover:border-slate-400'
-                  }`}
-                  onClick={() => {
-                    setCurrentSchema(s);
-                    setDbmlInput(s.dbml);
-                  }}
+                <div key={s.id} 
+                  className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center ${currentSchema?.id === s.id ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white border-slate-200 hover:border-slate-400'}`}
+                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); }}
                 >
                   <span className="text-xs font-bold truncate pr-2">{s.name}</span>
-                  <Trash2 
-                    size={14} 
-                    className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all cursor-pointer" 
-                    onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
-                  />
+                  <Trash2 size={14} className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all cursor-pointer" 
+                    onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }} />
                 </div>
               ))}
             </div>
@@ -208,96 +203,70 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* 2. Main Workspace (Split View) */}
       <div className="flex-grow flex flex-col min-w-0">
-        {/* Top Navbar */}
         <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200"
-            >
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200">
               {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
             <div className="h-4 w-px bg-slate-200" />
             <div className="text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
               {currentSchema?.name || 'Untitled Sketch'}
             </div>
-            {isSaving && (
-              <span className="text-[10px] text-slate-400 animate-pulse">Autosaving...</span>
-            )}
+            {isSaving && <span className="text-[10px] text-slate-400 animate-pulse">Autosaving...</span>}
           </div>
-
           <div className="flex items-center gap-3 font-sans">
-            <button
-              onClick={handleSaveManually}
-              className="flex items-center gap-2 px-4 py-1.5 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg border-2 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
-            >
+            <button onClick={handleSaveManually} className="flex items-center gap-2 px-4 py-1.5 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg border-2 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
               <Save size={14} /> Rename
             </button>
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
-            >
+            <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
               <Download size={14} /> Export DBML
             </button>
           </div>
         </nav>
 
-        {/* Editor & Canvas Split */}
         <div className="flex-grow flex overflow-hidden bg-white">
-          {/* Editor Pane */}
           <div className="w-1/3 min-w-[400px] border-r-2 border-slate-900 flex flex-col bg-[#fcfcfc] z-10">
             <div className="flex-grow flex flex-col p-4 space-y-4">
-              {/* AI Prompt */}
               <div className="relative">
                 <textarea
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="Ask AI to design or update..."
+                  placeholder="Describe your ideas here..."
                   className="w-full h-24 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]"
                 />
-                <button
-                  onClick={handleGenerate}
-                  disabled={isLoading || !userInput}
-                  className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
-                >
+                <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   {isLoading ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}
                 </button>
               </div>
 
-              {/* Code Editor */}
               <div className="flex-grow flex flex-col min-h-0">
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} />
                   <span>DBML Blueprint</span>
                 </div>
-                <textarea
-                  value={dbmlInput}
-                  onChange={(e) => setDbmlInput(e.target.value)}
-                  placeholder="Table users { ... }"
-                  className="flex-grow w-full p-5 bg-white border-2 border-slate-900 rounded-2xl text-slate-900 font-mono text-[13px] leading-relaxed outline-none resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]"
-                  spellCheck={false}
-                />
-              </div>
-              
-              {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px]">
-                  <AlertCircle size={14} />
-                  <span>{error}</span>
+                <div className="flex-grow overflow-auto bg-slate-900 border-2 border-slate-900 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]">
+                  <Editor
+                    value={dbmlInput}
+                    onValueChange={code => setDbmlInput(code)}
+                    highlight={code => dbmlHighlight(code)}
+                    padding={20}
+                    style={{
+                      fontFamily: '"Geist Mono", monospace',
+                      fontSize: 13,
+                      minHeight: '100%',
+                      outline: 'none',
+                    }}
+                    className="dbml-editor"
+                  />
                 </div>
-              )}
+              </div>
+              {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px]"><AlertCircle size={14} /><span>{error}</span></div>}
             </div>
           </div>
 
-          {/* Canvas Pane */}
           <div className="flex-grow relative overflow-hidden bg-[#fdfdfd]">
-            <VisualCanvas 
-              nodes={nodes} 
-              edges={edges} 
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-            />
+            <VisualCanvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} />
             {!dbmlInput && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="flex flex-col items-center gap-4 text-slate-300">

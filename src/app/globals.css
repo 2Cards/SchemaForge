@@ -26,6 +26,30 @@ body {
   border-radius: 10px;
   border: 2px solid #fdfdfd;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+/* Custom Prism/Editor styles */
+.dbml-editor pre {
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+.dbml-editor textarea {
+  outline: none !important;
+}
+
+.token.keyword {
+  color: #818cf8;
+  font-weight: bold;
+}
+
+.token.string {
+  color: #34d399;
+}
+
+.token.comment {
+  color: #64748b;
+  font-style: italic;
+}
+
+.token.class-name {
+  color: #fbbf24;
 }
