@@ -10,14 +10,12 @@ import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-sql';
-// No theme import, using manual colors in globals.css
 
 import { 
   Loader2, Save, Download, Database, Trash2, 
   Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus
 } from 'lucide-react';
 
-// Custom DBML-ish highlighting logic
 const dbmlHighlight = (code: string) => {
   return highlight(code, {
     ...languages.sql,
@@ -37,6 +35,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [schemaName, setSchemaName] = useState('');
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -47,6 +46,7 @@ export default function Home() {
     if (saved.length > 0) {
       setCurrentSchema(saved[0]);
       setDbmlInput(saved[0].dbml);
+      setSchemaName(saved[0].name);
     }
   }, []);
 
@@ -58,32 +58,38 @@ export default function Home() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!currentSchema || !dbmlInput || dbmlInput === currentSchema.dbml) return;
+    if (!currentSchema) return;
+    const hasChanges = dbmlInput !== currentSchema.dbml || schemaName !== currentSchema.name;
+    if (!hasChanges) return;
+
     if (timerRef.current) clearTimeout(timerRef.current);
+
     setIsSaving(true);
     timerRef.current = setTimeout(() => {
-      const updatedSchema = { ...currentSchema, dbml: dbmlInput, updatedAt: Date.now() };
+      const updatedSchema = { ...currentSchema, name: schemaName, dbml: dbmlInput, updatedAt: Date.now() };
       storage.saveSchema(updatedSchema);
       setSchemas(storage.getSchemas());
       setCurrentSchema(updatedSchema);
       setIsSaving(false);
-    }, 1500);
+    }, 1000); // 1s debounce
+
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [dbmlInput, currentSchema]);
+  }, [dbmlInput, schemaName, currentSchema]);
 
   const handleNewSchema = () => {
-    const name = window.prompt('New Sketch Name', 'Untitled Sketch') || 'New Sketch';
     const newSchema: Schema = {
       id: Date.now().toString(),
-      name,
+      name: 'Untitled Sketch',
       dbml: '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     storage.saveSchema(newSchema);
-    setSchemas(storage.getSchemas());
+    const updated = storage.getSchemas();
+    setSchemas(updated);
     setCurrentSchema(newSchema);
     setDbmlInput('');
+    setSchemaName(newSchema.name);
     setUserInput('');
   };
 
@@ -114,6 +120,7 @@ export default function Home() {
             updatedAt: Date.now(),
           };
           setCurrentSchema(newSchema);
+          setSchemaName(newSchema.name);
           storage.saveSchema(newSchema);
           setSchemas(storage.getSchemas());
         }
@@ -127,21 +134,6 @@ export default function Home() {
     }
   };
 
-  const handleSaveManually = () => {
-    if (!dbmlInput) return;
-    const name = window.prompt('Rename Sketch', currentSchema?.name || 'New Design') || currentSchema?.name || 'Untitled';
-    const schemaToSave: Schema = {
-      id: currentSchema?.id || Date.now().toString(),
-      name,
-      dbml: dbmlInput,
-      createdAt: currentSchema?.createdAt || Date.now(),
-      updatedAt: Date.now(),
-    };
-    storage.saveSchema(schemaToSave);
-    setSchemas(storage.getSchemas());
-    setCurrentSchema(schemaToSave);
-  };
-
   const handleDelete = (id: string) => {
     if (confirm('Delete this design?')) {
       storage.deleteSchema(id);
@@ -151,9 +143,11 @@ export default function Home() {
         if (updated.length > 0) {
           setCurrentSchema(updated[0]);
           setDbmlInput(updated[0].dbml);
+          setSchemaName(updated[0].name);
         } else {
           setCurrentSchema(null);
           setDbmlInput('');
+          setSchemaName('');
         }
       }
     }
@@ -165,7 +159,7 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${currentSchema?.name || 'schema'}.dbml`;
+    a.download = `${schemaName || 'schema'}.dbml`;
     a.click();
   };
 
@@ -191,7 +185,7 @@ export default function Home() {
               {schemas.map((s) => (
                 <div key={s.id} 
                   className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center ${currentSchema?.id === s.id ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white border-slate-200 hover:border-slate-400'}`}
-                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); }}
+                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); setSchemaName(s.name); }}
                 >
                   <span className="text-xs font-bold truncate pr-2">{s.name}</span>
                   <Trash2 size={14} className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all cursor-pointer" 
@@ -205,20 +199,20 @@ export default function Home() {
 
       <div className="flex-grow flex flex-col min-w-0">
         <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-grow max-w-xl">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200">
               {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
             <div className="h-4 w-px bg-slate-200" />
-            <div className="text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              {currentSchema?.name || 'Untitled Sketch'}
-            </div>
-            {isSaving && <span className="text-[10px] text-slate-400 animate-pulse">Autosaving...</span>}
+            <input 
+              value={schemaName}
+              onChange={(e) => setSchemaName(e.target.value)}
+              placeholder="Untitled Sketch"
+              className="flex-grow text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-indigo-50/50 transition-colors"
+            />
+            {isSaving && <span className="text-[10px] text-slate-400 animate-pulse shrink-0">Saving...</span>}
           </div>
-          <div className="flex items-center gap-3 font-sans">
-            <button onClick={handleSaveManually} className="flex items-center gap-2 px-4 py-1.5 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg border-2 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-              <Save size={14} /> Rename
-            </button>
+          <div className="flex items-center gap-3 font-sans ml-4">
             <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
               <Download size={14} /> Export DBML
             </button>
@@ -232,7 +226,7 @@ export default function Home() {
                 <textarea
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="Describe your ideas here..."
+                  placeholder="Ask AI to design or update..."
                   className="w-full h-24 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]"
                 />
                 <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
