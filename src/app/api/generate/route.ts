@@ -15,9 +15,9 @@ export async function POST(req: Request) {
       Focus on PostgreSQL compatibility.
     `;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
         contents: [{
           parts: [{ text: `${systemPrompt}\n\nDescription: ${prompt}` }]
@@ -31,9 +31,9 @@ export async function POST(req: Request) {
 
     if (!response.ok) {
       const errorData = await response.json();
-      return NextResponse.json({ 
-        error: `Gemini API Error: ${response.statusText}`, 
-        details: errorData 
+      return NextResponse.json({
+        error: `Gemini API Error: ${response.statusText}`,
+        details: errorData
       }, { status: response.status });
     }
 
