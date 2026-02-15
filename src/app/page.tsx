@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
@@ -13,7 +13,7 @@ import 'prismjs/components/prism-sql';
 
 import { 
   Loader2, Save, Download, Database, Trash2, 
-  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus
+  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Ggrip
 } from 'lucide-react';
 
 const dbmlHighlight = (code: string) => {
@@ -36,6 +36,10 @@ export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [schemaName, setSchemaName] = useState('');
+  
+  // 📏 Resizable panel state
+  const [leftPanelWidth, setLeftPanelWidth] = useState(450);
+  const isResizing = useRef(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -56,6 +60,7 @@ export default function Home() {
     setEdges(newEdges);
   }, [dbmlInput, setNodes, setEdges]);
 
+  // 🔄 Autosave logic
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!currentSchema) return;
@@ -71,10 +76,42 @@ export default function Home() {
       setSchemas(storage.getSchemas());
       setCurrentSchema(updatedSchema);
       setIsSaving(false);
-    }, 1000); // 1s debounce
+    }, 1000);
 
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [dbmlInput, schemaName, currentSchema]);
+
+  // 📏 Resize logic
+  const startResizing = useCallback(() => {
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizing.current = false;
+    document.body.style.cursor = 'default';
+    document.body.style.userSelect = 'auto';
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (!isResizing.current) return;
+    // sidebar width is 256px if open
+    const sidebarWidth = isSidebarOpen ? 256 : 0;
+    const newWidth = e.clientX - sidebarWidth;
+    if (newWidth > 300 && newWidth < 800) {
+      setLeftPanelWidth(newWidth);
+    }
+  }, [isSidebarOpen]);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
 
   const handleNewSchema = () => {
     const newSchema: Schema = {
@@ -165,6 +202,7 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100">
+      {/* 1. Projects Sidebar (Left) */}
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-0'} border-r-2 border-slate-900 bg-[#f8f9fa] transition-all duration-300 flex flex-col overflow-hidden shrink-0`}>
         <div className="p-5 border-b-2 border-slate-900 flex justify-between items-center bg-white">
           <div className="flex items-center gap-2">
@@ -172,7 +210,7 @@ export default function Home() {
             <span className="font-bold text-lg tracking-tight text-slate-900">SchemaForge</span>
           </div>
         </div>
-        <div className="flex-grow overflow-y-auto p-3 space-y-4">
+        <div className="flex-grow overflow-y-auto p-3 space-y-4 text-slate-900">
           <button 
             onClick={handleNewSchema}
             className="w-full py-2 px-4 border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-white rounded-xl text-xs font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2 mb-2"
@@ -197,7 +235,9 @@ export default function Home() {
         </div>
       </aside>
 
+      {/* 2. Main Workspace */}
       <div className="flex-grow flex flex-col min-w-0">
+        {/* Top Navbar */}
         <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4 flex-grow max-w-xl">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200">
@@ -208,32 +248,39 @@ export default function Home() {
               value={schemaName}
               onChange={(e) => setSchemaName(e.target.value)}
               placeholder="Untitled Sketch"
-              className="flex-grow text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-indigo-50/50 transition-colors"
+              className="flex-grow text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-indigo-50/50 transition-colors text-slate-900"
             />
             {isSaving && <span className="text-[10px] text-slate-400 animate-pulse shrink-0">Saving...</span>}
           </div>
           <div className="flex items-center gap-3 font-sans ml-4">
-            <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
+            <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-sans">
               <Download size={14} /> Export DBML
             </button>
           </div>
         </nav>
 
+        {/* Editor & Canvas Split */}
         <div className="flex-grow flex overflow-hidden bg-white">
-          <div className="w-1/3 min-w-[400px] border-r-2 border-slate-900 flex flex-col bg-[#fcfcfc] z-10">
+          {/* Editor Pane (Dynamic Width) */}
+          <div 
+            style={{ width: `${leftPanelWidth}px` }}
+            className="border-r-2 border-slate-900 flex flex-col bg-[#fcfcfc] z-10 shrink-0 relative"
+          >
             <div className="flex-grow flex flex-col p-4 space-y-4">
+              {/* AI Prompt */}
               <div className="relative">
                 <textarea
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
                   placeholder="Ask AI to design or update..."
-                  className="w-full h-24 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]"
+                  className="w-full h-24 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900"
                 />
                 <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   {isLoading ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}
                 </button>
               </div>
 
+              {/* Code Editor */}
               <div className="flex-grow flex flex-col min-h-0">
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} />
@@ -258,8 +305,17 @@ export default function Home() {
               </div>
               {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px]"><AlertCircle size={14} /><span>{error}</span></div>}
             </div>
+
+            {/* ↕️ Resize Handle */}
+            <div 
+              onMouseDown={startResizing}
+              className="absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 flex items-center justify-center group"
+            >
+              <div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" />
+            </div>
           </div>
 
+          {/* Canvas Pane */}
           <div className="flex-grow relative overflow-hidden bg-[#fdfdfd]">
             <VisualCanvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} />
             {!dbmlInput && (
