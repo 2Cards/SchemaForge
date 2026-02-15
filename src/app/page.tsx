@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
 import { useNodesState, useEdgesState } from 'reactflow';
 import { 
   Loader2, Plus, Save, Download, Database, Trash2, 
-  Code, Eye, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine
+  Code, Eye, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus
 } from 'lucide-react';
 
 export default function Home() {
@@ -18,6 +18,7 @@ export default function Home() {
   const [dbmlInput, setDbmlInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -39,6 +40,41 @@ export default function Home() {
     setEdges(newEdges);
   }, [dbmlInput, setNodes, setEdges]);
 
+  // 🔄 Autosave logic
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!currentSchema || !dbmlInput || dbmlInput === currentSchema.dbml) return;
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    setIsSaving(true);
+    timerRef.current = setTimeout(() => {
+      const updatedSchema = { ...currentSchema, dbml: dbmlInput, updatedAt: Date.now() };
+      storage.saveSchema(updatedSchema);
+      setSchemas(storage.getSchemas());
+      setCurrentSchema(updatedSchema);
+      setIsSaving(false);
+    }, 1500); // 1.5s debounce
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [dbmlInput, currentSchema]);
+
+  const handleNewSchema = () => {
+    const name = window.prompt('New Sketch Name', 'Untitled Sketch') || 'New Sketch';
+    const newSchema: Schema = {
+      id: Date.now().toString(),
+      name,
+      dbml: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    storage.saveSchema(newSchema);
+    setSchemas(storage.getSchemas());
+    setCurrentSchema(newSchema);
+    setDbmlInput('');
+    setUserInput('');
+  };
+
   const handleGenerate = async () => {
     if (!userInput) return;
     setIsLoading(true);
@@ -53,14 +89,25 @@ export default function Home() {
       if (res.ok && data.dbml) {
         const cleanDbml = data.dbml.replace(/```dbml|```/g, '').trim();
         setDbmlInput(cleanDbml);
-        const newSchema: Schema = {
-          id: Date.now().toString(),
-          name: 'Sketch ' + new Date().toLocaleTimeString(),
-          dbml: cleanDbml,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        setCurrentSchema(newSchema);
+        
+        // If we are on an empty sketch, update its name/content
+        if (currentSchema && !currentSchema.dbml) {
+           const updated = { ...currentSchema, dbml: cleanDbml, updatedAt: Date.now() };
+           storage.saveSchema(updated);
+           setCurrentSchema(updated);
+           setSchemas(storage.getSchemas());
+        } else {
+          const newSchema: Schema = {
+            id: Date.now().toString(),
+            name: 'AI Draft ' + new Date().toLocaleTimeString(),
+            dbml: cleanDbml,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          setCurrentSchema(newSchema);
+          storage.saveSchema(newSchema);
+          setSchemas(storage.getSchemas());
+        }
       } else {
         setError(data.error || 'AI limit reached. Try again.');
       }
@@ -71,9 +118,9 @@ export default function Home() {
     }
   };
 
-  const handleSave = () => {
+  const handleSaveManually = () => {
     if (!dbmlInput) return;
-    const name = window.prompt('Sketch Name', currentSchema?.name || 'New Design') || 'Untitled';
+    const name = window.prompt('Rename Sketch', currentSchema?.name || 'New Design') || currentSchema?.name || 'Untitled';
     const schemaToSave: Schema = {
       id: currentSchema?.id || Date.now().toString(),
       name,
@@ -125,6 +172,13 @@ export default function Home() {
         </div>
 
         <div className="flex-grow overflow-y-auto p-3 space-y-4">
+          <button 
+            onClick={handleNewSchema}
+            className="w-full py-2 px-4 border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-white rounded-xl text-xs font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2 mb-2"
+          >
+            <FilePlus size={14} /> New Sketch
+          </button>
+
           <div className="px-2 pt-2">
             <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Saved Sketches</h2>
             <div className="space-y-2">
@@ -169,14 +223,17 @@ export default function Home() {
             <div className="text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
               {currentSchema?.name || 'Untitled Sketch'}
             </div>
+            {isSaving && (
+              <span className="text-[10px] text-slate-400 animate-pulse">Autosaving...</span>
+            )}
           </div>
 
           <div className="flex items-center gap-3 font-sans">
             <button
-              onClick={handleSave}
+              onClick={handleSaveManually}
               className="flex items-center gap-2 px-4 py-1.5 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg border-2 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
             >
-              <Save size={14} /> Save
+              <Save size={14} /> Rename
             </button>
             <button
               onClick={handleDownload}
@@ -197,7 +254,7 @@ export default function Home() {
                 <textarea
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="Describe your ideas here..."
+                  placeholder="Ask AI to design or update..."
                   className="w-full h-24 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)]"
                 />
                 <button
