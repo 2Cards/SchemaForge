@@ -2,6 +2,7 @@ export interface Schema {
   id: string;
   name: string;
   dbml: string;
+  layout?: Record<string, { x: number; y: number }>;
   createdAt: number;
   updatedAt: number;
 }

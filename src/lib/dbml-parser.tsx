@@ -1,6 +1,7 @@
 import { Parser } from '@dbml/core';
+import { Node, Edge } from 'reactflow';
 
-export const parseDBML = (dbml: string) => {
+export const parseDBML = (dbml: string, existingNodes: Node[] = []) => {
   if (!dbml || typeof dbml !== 'string') return { nodes: [], edges: [] };
   
   try {
@@ -13,7 +14,9 @@ export const parseDBML = (dbml: string) => {
     const tables = schema.tables || [];
     const refs = schema.refs || [];
 
-    const nodes = tables.map((table: any, index: number) => {
+    const nodes: Node[] = tables.map((table: any, index: number) => {
+      const existingNode = existingNodes.find(n => n.id === table.name);
+      
       return {
         id: table.name,
         type: 'dbTable',
@@ -25,24 +28,29 @@ export const parseDBML = (dbml: string) => {
             pk: f.pk,
           }))
         },
-        // Grid-like layout
-        position: { x: (index % 3) * 350, y: Math.floor(index / 3) * 400 },
+        // Use existing position or generate grid
+        position: existingNode?.position || { 
+          x: (index % 3) * 350, 
+          y: Math.floor(index / 3) * (table.fields.length * 30 + 100) 
+        },
       };
     });
 
-    const edges = refs.map((ref: any, index: number) => {
-      // ref.endpoints usually has 2 elements: [source, target]
-      const targetSide = ref.endpoints[0];
-      const sourceSide = ref.endpoints[1];
+    const edges: Edge[] = refs.map((ref: any, index: number) => {
+      // For simplicity, we connect the first field of the ref
+      const targetEndpoint = ref.endpoints[0];
+      const sourceEndpoint = ref.endpoints[1];
       
+      const sourceFieldName = sourceEndpoint.fieldNames[0];
+      const targetFieldName = targetEndpoint.fieldNames[0];
+
       return {
         id: `ref-${index}`,
-        source: sourceSide.tableName,
-        sourceHandle: sourceSide.fieldNames[0], // Direct link to field ID
-        target: targetSide.tableName,
-        targetHandle: targetSide.fieldNames[0], // Direct link to field ID
+        source: sourceEndpoint.tableName,
+        sourceHandle: `${sourceFieldName}-source`,
+        target: targetEndpoint.tableName,
+        targetHandle: `${targetFieldName}-target`,
         type: 'smoothstep',
-        animated: false,
         style: { stroke: '#1e293b', strokeWidth: 3 },
       };
     });
