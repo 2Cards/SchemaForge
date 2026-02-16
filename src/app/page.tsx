@@ -90,8 +90,11 @@ function HomeContent() {
     });
   }, [setDbmlInput]);
 
+  // Initial Data Loading
   useEffect(() => {
-    let saved = storage.getSchemas();
+    const saved = storage.getSchemas();
+    setSchemas(saved);
+    
     if (saved.length === 0) {
       const firstSchema: Schema = { 
         id: 'initial', 
@@ -101,25 +104,11 @@ function HomeContent() {
         updatedAt: Date.now() 
       };
       storage.saveSchema(firstSchema);
-      saved = [firstSchema];
+      setSchemas([firstSchema]);
+      setCurrentSchema(firstSchema);
+    } else if (!currentSchema) {
+      setCurrentSchema(saved[0]);
     }
-
-    setSchemas(saved);
-    const initial = saved[0];
-    setCurrentSchema(initial);
-    setDbmlInput(initial.dbml);
-    setSchemaName(initial.name);
-    
-    const { nodes: initialNodes, edges: initialEdges } = parseDBML(initial.dbml);
-    if (initial.layout) {
-      setNodes(initialNodes.map(n => ({
-        ...n,
-        position: initial.layout![n.id] || n.position
-      })));
-    } else {
-      setNodes(initialNodes);
-    }
-    setEdges(initialEdges);
 
     const checkMobile = () => {
       const mobile = window.innerWidth <= 768;
@@ -132,14 +121,37 @@ function HomeContent() {
     setTimeout(() => { isInitialLoad.current = false; }, 100);
     
     return () => window.removeEventListener('resize', checkMobile);
-  }, [setNodes, setEdges]);
+  }, []);
 
-  // Sync visuals on code change
+  // Handle Switching between Schemas
   useEffect(() => {
-    if (isInitialLoad.current) return;
+    if (!currentSchema) return;
+
+    // 1. Sync Text Data
+    setDbmlInput(currentSchema.dbml);
+    setSchemaName(currentSchema.name);
+
+    // 2. Sync Visual Canvas (Important: Load layout from schema)
+    const { nodes: parsedNodes, edges: parsedEdges } = parseDBML(currentSchema.dbml);
+    const layoutNodes = parsedNodes.map(n => ({
+      ...n,
+      position: currentSchema.layout?.[n.id] || n.position
+    }));
+
+    setNodes(layoutNodes);
+    setEdges(parsedEdges);
+    
+    // Auto fit view on load
+    setTimeout(() => fitView({ padding: 0.2 }), 50);
+  }, [currentSchema?.id]); // Only trigger when the schema ID changes
+
+  // Handle live updates when typing in the editor
+  useEffect(() => {
+    if (isInitialLoad.current || !currentSchema) return;
+
     const { nodes: nextNodes, edges: nextEdges } = parseDBML(dbmlInput, nodes);
     
-    // Check if anything actually changed (prevent loops or unnecessary resets)
+    // Comparison to avoid unnecessary updates
     const currentNodesJson = JSON.stringify(nodes.map(n => ({ id: n.id, data: n.data })));
     const nextNodesJson = JSON.stringify(nextNodes.map(n => ({ id: n.id, data: n.data })));
     const currentEdgesJson = JSON.stringify(edges.map(e => ({ source: e.source, target: e.target })));
@@ -149,26 +161,39 @@ function HomeContent() {
     if (currentEdgesJson !== nextEdgesJson) setEdges(nextEdges);
   }, [dbmlInput]);
 
+  // Autosave Logic
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!currentSchema) return;
+    
     const layout: Record<string, { x: number; y: number }> = {};
     nodes.forEach(n => { layout[n.id] = n.position; });
+    
     const hasChanges = dbmlInput !== currentSchema.dbml || 
                        schemaName !== currentSchema.name ||
                        JSON.stringify(layout) !== JSON.stringify(currentSchema.layout || {});
+    
     if (!hasChanges) return;
+
     if (timerRef.current) clearTimeout(timerRef.current);
     setIsSaving(true);
+
     timerRef.current = setTimeout(() => {
-      const updatedSchema: Schema = { ...currentSchema, name: schemaName, dbml: dbmlInput, layout, updatedAt: Date.now() };
+      const updatedSchema: Schema = { 
+        ...currentSchema, 
+        name: schemaName, 
+        dbml: dbmlInput, 
+        layout, 
+        updatedAt: Date.now() 
+      };
       storage.saveSchema(updatedSchema);
       setSchemas(storage.getSchemas());
       setCurrentSchema(updatedSchema);
       setIsSaving(false);
     }, 1500);
+
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [dbmlInput, schemaName, nodes, currentSchema]);
+  }, [dbmlInput, schemaName, nodes]);
 
   const startResizing = useCallback(() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }, []);
   const stopResizing = useCallback(() => { isResizing.current = false; document.body.style.cursor = 'default'; }, []);
@@ -189,13 +214,9 @@ function HomeContent() {
     const name = window.prompt('New Sketch Name', 'Untitled Sketch') || 'New Sketch';
     const newSchema: Schema = { id: Date.now().toString(), name, dbml: '', createdAt: Date.now(), updatedAt: Date.now() };
     storage.saveSchema(newSchema);
-    setSchemas(storage.getSchemas());
+    const updated = storage.getSchemas();
+    setSchemas(updated);
     setCurrentSchema(newSchema);
-    setDbmlInput('');
-    setSchemaName(newSchema.name);
-    setNodes([]);
-    setEdges([]);
-    setUserInput('');
     if (isMobile) setIsSidebarOpen(false);
   };
 
@@ -229,16 +250,7 @@ function HomeContent() {
       const updated = storage.getSchemas();
       setSchemas(updated);
       if (currentSchema?.id === id) {
-        if (updated.length > 0) {
-          const next = updated[0];
-          setCurrentSchema(next);
-          setDbmlInput(next.dbml);
-          setSchemaName(next.name);
-        } else {
-          setCurrentSchema(null);
-          setDbmlInput('');
-          setSchemaName('');
-        }
+        setCurrentSchema(updated.length > 0 ? updated[0] : null);
       }
     }
   };
@@ -288,7 +300,6 @@ function HomeContent() {
     g.setDefaultEdgeLabel(() => ({}));
 
     nodes.forEach((node) => {
-      // Approximate dimensions for TableNode
       g.setNode(node.id, { width: 250, height: node.data.fields.length * 30 + 80 });
     });
 
@@ -336,8 +347,8 @@ function HomeContent() {
             <div className="space-y-2">
               {schemas.map((s) => (
                 <div key={s.id} 
-                  className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center ${currentSchema?.id === s.id ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white border-slate-200 hover:border-slate-400'}`}
-                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); setSchemaName(s.name); if (isMobile) setIsSidebarOpen(false); }}
+                  className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center cursor-pointer ${currentSchema?.id === s.id ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white border-slate-200 hover:border-slate-400'}`}
+                  onClick={() => { setCurrentSchema(s); if (isMobile) setIsSidebarOpen(false); }}
                 >
                   <span className="text-xs font-bold truncate pr-2">{s.name}</span>
                   <Trash2 size={14} className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all cursor-pointer" onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }} />
