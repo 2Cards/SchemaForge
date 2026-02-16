@@ -1,7 +1,21 @@
 import { NextResponse } from 'next/server';
 
+// Simple in-memory rate limiting for prototype
+let lastRequestTime = 0;
+const MIN_INTERVAL_MS = 1000; // 1 request per second
+
 export async function POST(req: Request) {
   try {
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+
+    if (timeSinceLastRequest < MIN_INTERVAL_MS) {
+      return NextResponse.json({ 
+        error: 'Too many requests. Please wait a second between generations.' 
+      }, { status: 429 });
+    }
+
+    lastRequestTime = now;
     const { prompt } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
