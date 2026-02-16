@@ -42,6 +42,43 @@ export const VisualCanvas = ({ nodes, edges, onNodesChange, onEdgesChange, onCon
         minZoom={0.05}
         maxZoom={2}
       >
+        <svg style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0 }}>
+          <defs>
+            <marker
+              id="crowfoot-many"
+              markerWidth="12"
+              markerHeight="12"
+              refX="10"
+              refY="6"
+              orient="auto"
+            >
+              <path 
+                d="M 2 2 L 10 6 L 2 10 M 10 2 L 10 10" 
+                fill="none" 
+                stroke="#1e293b" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+              />
+            </marker>
+            <marker
+              id="crowfoot-one"
+              markerWidth="12"
+              markerHeight="12"
+              refX="10"
+              refY="6"
+              orient="auto"
+            >
+              <path 
+                d="M 10 2 L 10 10 M 6 2 L 6 10" 
+                fill="none" 
+                stroke="#1e293b" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+              />
+            </marker>
+          </defs>
+        </svg>
         <Background color="#cbd5e1" variant={BackgroundVariant.Dots} gap={20} size={1.5} />
         <Controls className="!bg-white !border-2 !border-slate-900 !rounded-lg !shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" />
       </ReactFlow>

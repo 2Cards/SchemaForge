@@ -63,12 +63,8 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []) => {
         labelBgBorderRadius: 4,
         labelBgStyle: { fill: '#f8f9fa', fillOpacity: 1, stroke: '#1e293b', strokeWidth: 1 },
         style: { stroke: '#1e293b', strokeWidth: 2.5 },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 15,
-          height: 15,
-          color: '#1e293b',
-        },
+        markerEnd: relTarget === '1' ? 'crowfoot-one' : 'crowfoot-many',
+        markerStart: relSource === '1' ? 'crowfoot-one' : 'crowfoot-many',
       };
     });
 
