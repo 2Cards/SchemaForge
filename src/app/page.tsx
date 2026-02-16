@@ -4,8 +4,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
-import { useNodesState, useEdgesState, Node, Edge } from 'reactflow';
+import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, getRectOfNodes, getTransformForBounds } from 'reactflow';
 import Editor from 'react-simple-code-editor';
+import { toPng } from 'html-to-image';
 // @ts-ignore
 import { highlight, languages } from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
@@ -14,7 +15,7 @@ import 'prismjs/components/prism-sql';
 import { 
   Loader2, Save, Database, Trash2, 
   Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
-  Menu, X, Eye
+  Menu, X, Eye, Image as ImageIcon
 } from 'lucide-react';
 
 const dbmlHighlight = (code: string) => {
@@ -30,6 +31,14 @@ const dbmlHighlight = (code: string) => {
 type MobileTab = 'prompt' | 'code' | 'canvas';
 
 export default function Home() {
+  return (
+    <ReactFlowProvider>
+      <HomeContent />
+    </ReactFlowProvider>
+  );
+}
+
+function HomeContent() {
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [currentSchema, setCurrentSchema] = useState<Schema | null>(null);
   const [userInput, setUserInput] = useState('');
@@ -48,6 +57,7 @@ export default function Home() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const { getNodes } = useReactFlow();
 
   const onConnect = useCallback((params: any) => {
     const { source, sourceHandle, target, targetHandle } = params;
@@ -234,6 +244,37 @@ export default function Home() {
     a.click();
   };
 
+  const handleExportImage = async () => {
+    const nodes = getNodes();
+    if (nodes.length === 0) return;
+
+    const nodesBounds = getRectOfNodes(nodes);
+    const transform = getTransformForBounds(nodesBounds, 1200, 800, 0.5, 2);
+
+    const element = document.querySelector('.react-flow__viewport') as HTMLElement;
+    if (!element) return;
+
+    try {
+      const dataUrl = await toPng(document.querySelector('.react-flow') as HTMLElement, {
+        backgroundColor: '#fdfdfd',
+        width: 1200,
+        height: 800,
+        style: {
+          width: '1200px',
+          height: '800px',
+          transform: `translate(${transform[0]}px, ${transform[1]}px) scale(${transform[2]})`,
+        },
+      });
+
+      const a = document.createElement('a');
+      a.setAttribute('download', `${schemaName || 'schema'}.png`);
+      a.setAttribute('href', dataUrl);
+      a.click();
+    } catch (err) {
+      console.error('Export failed', err);
+    }
+  };
+
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100 relative">
       <aside className={`
@@ -280,9 +321,12 @@ export default function Home() {
             <input value={schemaName} onChange={(e) => setSchemaName(e.target.value)} placeholder="Untitled Sketch" className="flex-grow text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-indigo-50/50 transition-colors text-slate-900 placeholder:text-slate-300 min-w-0" />
             {isSaving && <span className="text-[10px] text-slate-400 animate-pulse shrink-0 hidden sm:block">Saving...</span>}
           </div>
-          <div className="flex items-center gap-2 font-sans ml-2">
+          <div className="flex items-center gap-2 font-sans ml-2 shrink-0">
+            <button onClick={handleExportImage} className="p-2 md:px-3 md:py-1.5 bg-white border-2 border-slate-900 hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+              <ImageIcon size={16} className="md:mr-2 inline" /><span className="hidden md:inline">PNG</span>
+            </button>
             <button onClick={handleDownload} className="p-2 md:px-4 md:py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-              <Download size={16} className="md:mr-2 inline" /><span className="hidden md:inline">Export DBML</span>
+              <Download size={16} className="md:mr-2 inline" /><span className="hidden md:inline">DBML</span>
             </button>
           </div>
         </nav>
@@ -314,7 +358,6 @@ export default function Home() {
             `}
           >
             <div className="flex-grow flex flex-col p-4 space-y-4 overflow-hidden">
-              {/* Code Editor (Moved up) */}
               <div className={`${activeTab === 'prompt' ? 'hidden md:flex' : 'flex'} flex-grow flex flex-col min-h-0 text-slate-900`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} /><span>DBML Blueprint</span>
@@ -326,7 +369,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* AI Prompt (Moved down) */}
               <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Sparkles size={12} /><span>AI Architect</span>
