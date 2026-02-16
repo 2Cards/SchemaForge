@@ -20,7 +20,7 @@ import {
 const dbmlHighlight = (code: string) => {
   return highlight(code, {
     ...languages.sql,
-    'keyword': /\b(Table|Ref|Enum|indexes|Project|Note|as|pk|unique|not null|increment)\b/i,
+    'keyword': /\b(Table|Ref|Enum|indexes|Project|Note|as|pk|unique|not null|increment|headercolor)\b/i,
     'string': /(['"])(?:(?!\1)[^\\\r\n]|\\.)*\1/,
     'comment': /\/\/.*|(?:\/\*[\s\S]*?\*\/)/,
     'class-name': /\b[A-Z_][a-z0-9_]*\b/,
@@ -53,7 +53,6 @@ export default function Home() {
     const { source, sourceHandle, target, targetHandle } = params;
     if (!source || !sourceHandle || !target || !targetHandle) return;
 
-    // Handle ID format: `${field.name}-source` or `${field.name}-target`
     const sourceField = sourceHandle.split('-')[0];
     const targetField = targetHandle.split('-')[0];
 
@@ -63,13 +62,10 @@ export default function Home() {
 
   const onTableColorChange = useCallback((tableName: string, color: string) => {
     setDbmlInput(prev => {
-      // Look for table definition: Table tableName [settings] {
-      // We want to add or replace headercolor in settings
       const tableRegex = new RegExp(`(Table\\s+${tableName}\\s*\\[)(.*?)(\\])`, 'i');
       const tableWithoutSettingsRegex = new RegExp(`(Table\\s+${tableName})(\\s*\\{)`, 'i');
 
       if (tableRegex.test(prev)) {
-        // Replace existing or add to existing settings
         return prev.replace(tableRegex, (match, p1, p2, p3) => {
           if (p2.includes('headercolor:')) {
             return `${p1}${p2.replace(/headercolor:\s*#[a-f0-9]{3,6}/i, `headercolor: ${color}`)}${p3}`;
@@ -78,7 +74,6 @@ export default function Home() {
           }
         });
       } else {
-        // Add settings block if not exists
         return prev.replace(tableWithoutSettingsRegex, `$1 [headercolor: ${color}]$2`);
       }
     });
@@ -87,8 +82,6 @@ export default function Home() {
   // 1. Initial Load & Window Size
   useEffect(() => {
     let saved = storage.getSchemas();
-    
-    // Fix: If no schemas exist, create the first one immediately
     if (saved.length === 0) {
       const firstSchema: Schema = { 
         id: 'initial', 
@@ -135,9 +128,7 @@ export default function Home() {
   useEffect(() => {
     if (isInitialLoad.current) return;
     const { nodes: nextNodes, edges: nextEdges } = parseDBML(dbmlInput, nodes);
-    const currentIds = nodes.map(n => n.id).sort().join(',');
-    const nextIds = nextNodes.map(n => n.id).sort().join(',');
-    if (currentIds !== nextIds || nodes.length === 0) setNodes(nextNodes);
+    setNodes(nextNodes);
     setEdges(nextEdges);
   }, [dbmlInput]);
 
@@ -242,7 +233,6 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100 relative">
-      {/* 1. Sidebar */}
       <aside className={`
         fixed md:relative z-50 h-full border-r-2 border-slate-900 bg-[#f8f9fa] transition-all duration-300 flex flex-col overflow-hidden shrink-0
         ${isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0'}
@@ -277,9 +267,7 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* 2. Main Workspace */}
       <div className="flex-grow flex flex-col min-w-0 h-full">
-        {/* Top Navbar */}
         <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm text-slate-900">
           <div className="flex items-center gap-3 flex-grow max-w-xl">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200">
@@ -296,7 +284,6 @@ export default function Home() {
           </div>
         </nav>
 
-        {/* Mobile Tabs */}
         <div className="md:hidden flex border-b-2 border-slate-900 bg-[#f8f9fa] p-1 font-sans">
           {(['prompt', 'code', 'canvas'] as const).map((tab) => (
             <button
@@ -314,10 +301,7 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Editor & Canvas Container */}
         <div className="flex-grow flex overflow-hidden bg-white relative">
-          
-          {/* Editor/Prompt Pane */}
           <div 
             style={{ width: !isMobile ? `${leftPanelWidth}px` : '100%' }} 
             className={`
@@ -327,7 +311,6 @@ export default function Home() {
             `}
           >
             <div className="flex-grow flex flex-col p-4 space-y-4 overflow-hidden">
-              {/* AI Prompt */}
               <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
                 <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Ask AI to design..." className="w-full h-24 md:h-32 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900" />
                 <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
@@ -335,7 +318,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Code Editor */}
               <div className={`${activeTab === 'prompt' ? 'hidden md:flex' : 'flex'} flex-grow flex flex-col min-h-0 text-slate-900`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} /><span>DBML Blueprint</span>
@@ -348,13 +330,11 @@ export default function Home() {
               </div>
               {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px] shrink-0"><AlertCircle size={14} /><span>{error}</span></div>}
             </div>
-            {/* Desktop Resize Handle */}
             <div onMouseDown={startResizing} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group">
               <div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" />
             </div>
           </div>
 
-          {/* Canvas Pane */}
           <div className={`flex-grow relative overflow-hidden bg-[#fdfdfd] ${activeTab !== 'canvas' ? 'hidden md:block' : 'block'}`}>
             <VisualCanvas 
               nodes={nodes} 

@@ -22,14 +22,13 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []) => {
         type: 'dbTable',
         data: { 
           name: table.name,
-          color: table.headerColor,
+          color: table.headerColor || table.settings?.headercolor || table.settings?.headerColor,
           fields: table.fields.map((f: any) => ({
             name: f.name,
             type: f.type.type_name,
             pk: f.pk,
           }))
         },
-        // Use existing position or generate grid
         position: existingNode?.position || { 
           x: (index % 3) * 350, 
           y: Math.floor(index / 3) * (table.fields.length * 30 + 100) 
@@ -44,9 +43,6 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []) => {
       const sourceFieldName = sourceEndpoint.fieldNames[0];
       const targetFieldName = targetEndpoint.fieldNames[0];
 
-      // Cardinality detection
-      // 1:1 (-), 1:N (>), N:1 (<), N:M (<>)
-      // ref.endpoints[i].relation is '1' or '*'
       const relSource = sourceEndpoint.relation === '1' ? '1' : 'N';
       const relTarget = targetEndpoint.relation === '1' ? '1' : 'N';
       const label = `${relSource}:${relTarget}`;
