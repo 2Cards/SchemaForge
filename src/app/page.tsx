@@ -14,7 +14,7 @@ import 'prismjs/components/prism-sql';
 import { 
   Loader2, Save, Database, Trash2, 
   Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
-  Menu, X, Eye, Laptop
+  Menu, X, Eye
 } from 'lucide-react';
 
 const dbmlHighlight = (code: string) => {
@@ -36,10 +36,11 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [dbmlInput, setDbmlInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default on mobile
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [schemaName, setSchemaName] = useState('');
   const [activeTab, setActiveTab] = useState<MobileTab>('prompt');
+  const [isMobile, setIsMobile] = useState(false);
   
   const [leftPanelWidth, setLeftPanelWidth] = useState(450);
   const isResizing = useRef(false);
@@ -48,7 +49,7 @@ export default function Home() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // 1. Initial Load
+  // 1. Initial Load & Window Size
   useEffect(() => {
     const saved = storage.getSchemas();
     setSchemas(saved);
@@ -69,9 +70,18 @@ export default function Home() {
       }
       setEdges(initialEdges);
     }
-    // Open sidebar by default only on large screens
-    if (window.innerWidth > 768) setIsSidebarOpen(true);
+
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (!mobile && isInitialLoad.current) setIsSidebarOpen(true);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
     setTimeout(() => { isInitialLoad.current = false; }, 100);
+    
+    return () => window.removeEventListener('resize', checkMobile);
   }, [setNodes, setEdges]);
 
   // 2. Sync Visuals
@@ -133,7 +143,7 @@ export default function Home() {
     setNodes([]);
     setEdges([]);
     setUserInput('');
-    if (window.innerWidth <= 768) setIsSidebarOpen(false);
+    if (isMobile) setIsSidebarOpen(false);
   };
 
   const handleGenerate = async () => {
@@ -146,7 +156,7 @@ export default function Home() {
       if (res.ok && data.dbml) {
         const cleanDbml = data.dbml.replace(/```dbml|```/g, '').trim();
         setDbmlInput(cleanDbml);
-        if (window.innerWidth <= 768) setActiveTab('canvas');
+        if (isMobile) setActiveTab('canvas');
       } else {
         setError(data.error || 'AI limit reached.');
       }
@@ -185,17 +195,17 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100 relative">
-      {/* 1. Mobile & Desktop Sidebar Overlay/Aside */}
+      {/* 1. Sidebar */}
       <aside className={`
         fixed md:relative z-50 h-full border-r-2 border-slate-900 bg-[#f8f9fa] transition-all duration-300 flex flex-col overflow-hidden shrink-0
         ${isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0'}
       `}>
-        <div className="p-5 border-b-2 border-slate-900 flex justify-between items-center bg-white">
+        <div className="p-5 border-b-2 border-slate-900 flex justify-between items-center bg-white text-slate-900">
           <div className="flex items-center gap-2">
             <PencilLine size={20} className="text-slate-900" />
             <span className="font-bold text-lg tracking-tight">SchemaForge</span>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1">
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1 text-slate-900">
             <X size={20} />
           </button>
         </div>
@@ -209,7 +219,7 @@ export default function Home() {
               {schemas.map((s) => (
                 <div key={s.id} 
                   className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center ${currentSchema?.id === s.id ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white border-slate-200 hover:border-slate-400'}`}
-                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); setSchemaName(s.name); if (window.innerWidth <= 768) setIsSidebarOpen(false); }}
+                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); setSchemaName(s.name); if (isMobile) setIsSidebarOpen(false); }}
                 >
                   <span className="text-xs font-bold truncate pr-2">{s.name}</span>
                   <Trash2 size={14} className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all cursor-pointer" onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }} />
@@ -220,10 +230,10 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* Main Workspace */}
+      {/* 2. Main Workspace */}
       <div className="flex-grow flex flex-col min-w-0 h-full">
         {/* Top Navbar */}
-        <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
+        <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm text-slate-900">
           <div className="flex items-center gap-3 flex-grow max-w-xl">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200">
               <Menu size={18} />
@@ -239,7 +249,7 @@ export default function Home() {
           </div>
         </nav>
 
-        {/* Mobile Tabs (Top) */}
+        {/* Mobile Tabs */}
         <div className="md:hidden flex border-b-2 border-slate-900 bg-[#f8f9fa] p-1 font-sans">
           {(['prompt', 'code', 'canvas'] as const).map((tab) => (
             <button
@@ -260,9 +270,9 @@ export default function Home() {
         {/* Editor & Canvas Container */}
         <div className="flex-grow flex overflow-hidden bg-white relative">
           
-          {/* Editor/Prompt Pane (Hidden on mobile unless tab active) */}
+          {/* Editor/Prompt Pane */}
           <div 
-            style={{ width: window.innerWidth > 768 ? `${leftPanelWidth}px` : '100%' }} 
+            style={{ width: !isMobile ? `${leftPanelWidth}px` : '100%' }} 
             className={`
               ${activeTab === 'canvas' ? 'hidden md:flex' : 'flex'}
               border-r-2 border-slate-900 flex-col bg-[#fcfcfc] z-10 shrink-0 relative
@@ -270,7 +280,7 @@ export default function Home() {
             `}
           >
             <div className="flex-grow flex flex-col p-4 space-y-4 overflow-hidden">
-              {/* AI Prompt (Hidden on mobile if 'code' tab active) */}
+              {/* AI Prompt */}
               <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
                 <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Ask AI to design..." className="w-full h-24 md:h-32 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900" />
                 <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
@@ -278,7 +288,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Code Editor (Hidden on mobile if 'prompt' tab active) */}
+              {/* Code Editor */}
               <div className={`${activeTab === 'prompt' ? 'hidden md:flex' : 'flex'} flex-grow flex flex-col min-h-0 text-slate-900`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} /><span>DBML Blueprint</span>
