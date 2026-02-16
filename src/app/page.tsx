@@ -79,7 +79,6 @@ export default function Home() {
     });
   }, [setDbmlInput]);
 
-  // 1. Initial Load & Window Size
   useEffect(() => {
     let saved = storage.getSchemas();
     if (saved.length === 0) {
@@ -124,7 +123,6 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile);
   }, [setNodes, setEdges]);
 
-  // 2. Sync Visuals
   useEffect(() => {
     if (isInitialLoad.current) return;
     const { nodes: nextNodes, edges: nextEdges } = parseDBML(dbmlInput, nodes);
@@ -132,7 +130,6 @@ export default function Home() {
     setEdges(nextEdges);
   }, [dbmlInput]);
 
-  // 3. Autosave
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!currentSchema) return;
@@ -154,7 +151,6 @@ export default function Home() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [dbmlInput, schemaName, nodes, currentSchema]);
 
-  // 4. Resize
   const startResizing = useCallback(() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }, []);
   const stopResizing = useCallback(() => { isResizing.current = false; document.body.style.cursor = 'default'; }, []);
   const resize = useCallback((e: MouseEvent) => {
@@ -189,11 +185,18 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/generate', { method: 'POST', body: JSON.stringify({ prompt: userInput }) });
+      const res = await fetch('/api/generate', { 
+        method: 'POST', 
+        body: JSON.stringify({ 
+          prompt: userInput,
+          currentDbml: dbmlInput
+        }) 
+      });
       const data = await res.json();
       if (res.ok && data.dbml) {
         const cleanDbml = data.dbml.replace(/```dbml|```/g, '').trim();
         setDbmlInput(cleanDbml);
+        setUserInput('');
         if (isMobile) setActiveTab('canvas');
       } else {
         setError(data.error || 'AI limit reached.');
@@ -311,13 +314,7 @@ export default function Home() {
             `}
           >
             <div className="flex-grow flex flex-col p-4 space-y-4 overflow-hidden">
-              <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
-                <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Ask AI to design..." className="w-full h-24 md:h-32 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900" />
-                <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                  {isLoading ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}
-                </button>
-              </div>
-
+              {/* Code Editor (Moved up) */}
               <div className={`${activeTab === 'prompt' ? 'hidden md:flex' : 'flex'} flex-grow flex flex-col min-h-0 text-slate-900`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} /><span>DBML Blueprint</span>
@@ -328,6 +325,24 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+
+              {/* AI Prompt (Moved down) */}
+              <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
+                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
+                  <Sparkles size={12} /><span>AI Architect</span>
+                </div>
+                <div className="relative">
+                  <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Explain changes (e.g. 'add a status field to users')..." className="w-full h-24 md:h-28 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900" />
+                  <button 
+                    onClick={handleGenerate} 
+                    disabled={isLoading || !userInput} 
+                    className="absolute bottom-4 right-4 p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border border-slate-900"
+                  >
+                    {isLoading ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}
+                  </button>
+                </div>
+              </div>
+
               {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px] shrink-0"><AlertCircle size={14} /><span>{error}</span></div>}
             </div>
             <div onMouseDown={startResizing} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group">

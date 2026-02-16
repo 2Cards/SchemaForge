@@ -16,7 +16,8 @@ export async function POST(req: Request) {
     }
 
     lastRequestTime = now;
-    const { prompt } = await req.json();
+
+    const { prompt, currentDbml } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -24,9 +25,16 @@ export async function POST(req: Request) {
     }
 
     const systemPrompt = `
-      You are a database architect. Convert the following description into a valid DBML (Database Markup Language) schema.
-      Return ONLY the DBML code, no explanations, no markdown blocks.
-      Focus on PostgreSQL compatibility.
+      You are a database architect. Your task is to generate or update a DBML (Database Markup Language) schema based on user request.
+      
+      CRITICAL RULES:
+      1. Return ONLY the valid DBML code.
+      2. Do NOT include explanations, markdown code blocks, or any other text.
+      3. If 'currentDbml' is provided, UPDATE it by adding new tables/fields or modifying existing ones as requested. Do NOT delete unrelated parts of the existing schema.
+      4. Use PostgreSQL naming conventions.
+      
+      Current Schema Context:
+      ${currentDbml || 'Empty'}
     `;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`, {
@@ -34,7 +42,7 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
         contents: [{
-          parts: [{ text: `${systemPrompt}\n\nDescription: ${prompt}` }]
+          parts: [{ text: `${systemPrompt}\n\nUser Request: ${prompt}` }]
         }],
         generationConfig: {
           temperature: 0.1,
