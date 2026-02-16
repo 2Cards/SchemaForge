@@ -57,7 +57,7 @@ function HomeContent() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const { getNodes } = useReactFlow();
+  const { getNodes, fitView } = useReactFlow();
 
   const onConnect = useCallback((params: any) => {
     const { source, sourceHandle, target, targetHandle } = params;
@@ -245,25 +245,28 @@ function HomeContent() {
   };
 
   const handleExportImage = async () => {
-    const nodes = getNodes();
-    if (nodes.length === 0) return;
+    const currentNodes = getNodes();
+    if (currentNodes.length === 0) return;
 
-    const nodesBounds = getRectOfNodes(nodes);
-    const transform = getTransformForBounds(nodesBounds, 1200, 800, 0.5, 2);
-
-    const element = document.querySelector('.react-flow__viewport') as HTMLElement;
+    const element = document.querySelector('.react-flow') as HTMLElement;
     if (!element) return;
 
     try {
-      const dataUrl = await toPng(document.querySelector('.react-flow') as HTMLElement, {
+      setIsLoading(true);
+      // Ensure all nodes are visible
+      await fitView({ padding: 0.2 });
+      
+      // Wait a frame for React Flow to update transform
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const dataUrl = await toPng(element, {
         backgroundColor: '#fdfdfd',
-        width: 1200,
-        height: 800,
-        style: {
-          width: '1200px',
-          height: '800px',
-          transform: `translate(${transform[0]}px, ${transform[1]}px) scale(${transform[2]})`,
+        filter: (node: HTMLElement) => {
+          const exclusionClasses = ['react-flow__controls', 'react-flow__attribution'];
+          return !exclusionClasses.some((cls) => node.classList?.contains(cls));
         },
+        pixelRatio: 2,
+        cacheBust: true,
       });
 
       const a = document.createElement('a');
@@ -272,6 +275,8 @@ function HomeContent() {
       a.click();
     } catch (err) {
       console.error('Export failed', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
