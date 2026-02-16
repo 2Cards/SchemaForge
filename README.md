@@ -1,4 +1,4 @@
-# SchemaForge ⚙️
+# DBRaw ⚙️
 
 AI-powered visual database schema designer. Open Source prototype.
 

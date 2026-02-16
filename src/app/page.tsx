@@ -203,7 +203,7 @@ export default function Home() {
         <div className="p-5 border-b-2 border-slate-900 flex justify-between items-center bg-white text-slate-900">
           <div className="flex items-center gap-2">
             <PencilLine size={20} className="text-slate-900" />
-            <span className="font-bold text-lg tracking-tight">SchemaForge</span>
+            <span className="font-bold text-lg tracking-tight">DBRaw</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1 text-slate-900">
             <X size={20} />

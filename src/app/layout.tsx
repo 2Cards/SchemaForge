@@ -19,7 +19,7 @@ const architectsDaughter = Architects_Daughter({
 });
 
 export const metadata: Metadata = {
-  title: "SchemaForge - AI Database Designer",
+  title: "DBRaw - AI Database Designer",
   description: "Generate and visualize database schemas with AI",
 };
 
