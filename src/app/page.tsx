@@ -7,6 +7,7 @@ import { parseDBML } from '@/lib/dbml-parser';
 import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, getRectOfNodes, getTransformForBounds } from 'reactflow';
 import Editor from 'react-simple-code-editor';
 import { toPng } from 'html-to-image';
+import dagre from 'dagre';
 // @ts-ignore
 import { highlight, languages } from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
@@ -15,7 +16,7 @@ import 'prismjs/components/prism-sql';
 import { 
   Loader2, Save, Database, Trash2, 
   Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
-  Menu, X, Eye, Image as ImageIcon
+  Menu, X, Eye, Image as ImageIcon, Wand2
 } from 'lucide-react';
 
 const dbmlHighlight = (code: string) => {
@@ -133,11 +134,19 @@ function HomeContent() {
     return () => window.removeEventListener('resize', checkMobile);
   }, [setNodes, setEdges]);
 
+  // Sync visuals on code change
   useEffect(() => {
     if (isInitialLoad.current) return;
     const { nodes: nextNodes, edges: nextEdges } = parseDBML(dbmlInput, nodes);
-    setNodes(nextNodes);
-    setEdges(nextEdges);
+    
+    // Check if anything actually changed (prevent loops or unnecessary resets)
+    const currentNodesJson = JSON.stringify(nodes.map(n => ({ id: n.id, data: n.data })));
+    const nextNodesJson = JSON.stringify(nextNodes.map(n => ({ id: n.id, data: n.data })));
+    const currentEdgesJson = JSON.stringify(edges.map(e => ({ source: e.source, target: e.target })));
+    const nextEdgesJson = JSON.stringify(nextEdges.map(e => ({ source: e.source, target: e.target })));
+
+    if (currentNodesJson !== nextNodesJson) setNodes(nextNodes);
+    if (currentEdgesJson !== nextEdgesJson) setEdges(nextEdges);
   }, [dbmlInput]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -247,18 +256,12 @@ function HomeContent() {
   const handleExportImage = async () => {
     const currentNodes = getNodes();
     if (currentNodes.length === 0) return;
-
     const element = document.querySelector('.react-flow') as HTMLElement;
     if (!element) return;
-
     try {
       setIsLoading(true);
-      // Ensure all nodes are visible
       await fitView({ padding: 0.2 });
-      
-      // Wait a frame for React Flow to update transform
       await new Promise(resolve => setTimeout(resolve, 100));
-
       const dataUrl = await toPng(element, {
         backgroundColor: '#fdfdfd',
         filter: (node: HTMLElement) => {
@@ -268,7 +271,6 @@ function HomeContent() {
         pixelRatio: 2,
         cacheBust: true,
       });
-
       const a = document.createElement('a');
       a.setAttribute('download', `${schemaName || 'schema'}.png`);
       a.setAttribute('href', dataUrl);
@@ -279,6 +281,36 @@ function HomeContent() {
       setIsLoading(false);
     }
   };
+
+  const handleAutoLayout = useCallback(() => {
+    const g = new dagre.graphlib.Graph();
+    g.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 200 });
+    g.setDefaultEdgeLabel(() => ({}));
+
+    nodes.forEach((node) => {
+      // Approximate dimensions for TableNode
+      g.setNode(node.id, { width: 250, height: node.data.fields.length * 30 + 80 });
+    });
+
+    edges.forEach((edge) => {
+      g.setEdge(edge.source, edge.target);
+    });
+
+    dagre.layout(g);
+
+    setNodes((nds) => nds.map((node) => {
+      const nodeWithPosition = g.node(node.id);
+      return {
+        ...node,
+        position: {
+          x: nodeWithPosition.x - 125,
+          y: nodeWithPosition.y - 40,
+        },
+      };
+    }));
+    
+    setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100);
+  }, [nodes, edges, setNodes, fitView]);
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100 relative">
@@ -327,6 +359,9 @@ function HomeContent() {
             {isSaving && <span className="text-[10px] text-slate-400 animate-pulse shrink-0 hidden sm:block">Saving...</span>}
           </div>
           <div className="flex items-center gap-2 font-sans ml-2 shrink-0">
+            <button onClick={handleAutoLayout} className="p-2 md:px-3 md:py-1.5 bg-indigo-50 border-2 border-slate-900 hover:bg-indigo-100 text-slate-900 text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+              <Wand2 size={16} className="md:mr-2 inline" /><span className="hidden md:inline">Magic</span>
+            </button>
             <button onClick={handleExportImage} className="p-2 md:px-3 md:py-1.5 bg-white border-2 border-slate-900 hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
               <ImageIcon size={16} className="md:mr-2 inline" /><span className="hidden md:inline">PNG</span>
             </button>
