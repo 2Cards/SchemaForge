@@ -51,25 +51,37 @@ export default function Home() {
 
   // 1. Initial Load & Window Size
   useEffect(() => {
-    const saved = storage.getSchemas();
-    setSchemas(saved);
-    if (saved.length > 0) {
-      const initial = saved[0];
-      setCurrentSchema(initial);
-      setDbmlInput(initial.dbml);
-      setSchemaName(initial.name);
-      
-      const { nodes: initialNodes, edges: initialEdges } = parseDBML(initial.dbml);
-      if (initial.layout) {
-        setNodes(initialNodes.map(n => ({
-          ...n,
-          position: initial.layout![n.id] || n.position
-        })));
-      } else {
-        setNodes(initialNodes);
-      }
-      setEdges(initialEdges);
+    let saved = storage.getSchemas();
+    
+    // Fix: If no schemas exist, create the first one immediately
+    if (saved.length === 0) {
+      const firstSchema: Schema = { 
+        id: 'initial', 
+        name: 'Untitled Sketch', 
+        dbml: '', 
+        createdAt: Date.now(), 
+        updatedAt: Date.now() 
+      };
+      storage.saveSchema(firstSchema);
+      saved = [firstSchema];
     }
+
+    setSchemas(saved);
+    const initial = saved[0];
+    setCurrentSchema(initial);
+    setDbmlInput(initial.dbml);
+    setSchemaName(initial.name);
+    
+    const { nodes: initialNodes, edges: initialEdges } = parseDBML(initial.dbml);
+    if (initial.layout) {
+      setNodes(initialNodes.map(n => ({
+        ...n,
+        position: initial.layout![n.id] || n.position
+      })));
+    } else {
+      setNodes(initialNodes);
+    }
+    setEdges(initialEdges);
 
     const checkMobile = () => {
       const mobile = window.innerWidth <= 768;
