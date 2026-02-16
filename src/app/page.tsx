@@ -13,7 +13,8 @@ import 'prismjs/components/prism-sql';
 
 import { 
   Loader2, Save, Database, Trash2, 
-  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download
+  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
+  Menu, X, Eye, Laptop
 } from 'lucide-react';
 
 const dbmlHighlight = (code: string) => {
@@ -26,6 +27,8 @@ const dbmlHighlight = (code: string) => {
   }, 'dbml');
 };
 
+type MobileTab = 'prompt' | 'code' | 'canvas';
+
 export default function Home() {
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [currentSchema, setCurrentSchema] = useState<Schema | null>(null);
@@ -33,9 +36,10 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [dbmlInput, setDbmlInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default on mobile
   const [isSaving, setIsSaving] = useState(false);
   const [schemaName, setSchemaName] = useState('');
+  const [activeTab, setActiveTab] = useState<MobileTab>('prompt');
   
   const [leftPanelWidth, setLeftPanelWidth] = useState(450);
   const isResizing = useRef(false);
@@ -44,7 +48,7 @@ export default function Home() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // 1. Initial Load from LocalStorage
+  // 1. Initial Load
   useEffect(() => {
     const saved = storage.getSchemas();
     setSchemas(saved);
@@ -54,106 +58,73 @@ export default function Home() {
       setDbmlInput(initial.dbml);
       setSchemaName(initial.name);
       
-      const { nodes: parsedNodes, edges: parsedEdges } = parseDBML(initial.dbml);
-      
-      const positionedNodes = parsedNodes.map(n => ({
-        ...n,
-        position: initial.layout?.[n.id] || n.position
-      }));
-
-      setNodes(positionedNodes);
-      setEdges(parsedEdges);
+      const { nodes: initialNodes, edges: initialEdges } = parseDBML(initial.dbml);
+      if (initial.layout) {
+        setNodes(initialNodes.map(n => ({
+          ...n,
+          position: initial.layout![n.id] || n.position
+        })));
+      } else {
+        setNodes(initialNodes);
+      }
+      setEdges(initialEdges);
     }
+    // Open sidebar by default only on large screens
+    if (window.innerWidth > 768) setIsSidebarOpen(true);
     setTimeout(() => { isInitialLoad.current = false; }, 100);
   }, [setNodes, setEdges]);
 
-  // 2. Sync Visuals when DBML changes
+  // 2. Sync Visuals
   useEffect(() => {
     if (isInitialLoad.current) return;
-
     const { nodes: nextNodes, edges: nextEdges } = parseDBML(dbmlInput, nodes);
-    
     const currentIds = nodes.map(n => n.id).sort().join(',');
     const nextIds = nextNodes.map(n => n.id).sort().join(',');
-    
-    if (currentIds !== nextIds) {
-      setNodes(nextNodes);
-    }
+    if (currentIds !== nextIds || nodes.length === 0) setNodes(nextNodes);
     setEdges(nextEdges);
   }, [dbmlInput]);
 
-  // 3. 🔄 Unified Autosave Logic
+  // 3. Autosave
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const saveToStorage = useCallback(() => {
+  useEffect(() => {
     if (!currentSchema) return;
-
     const layout: Record<string, { x: number; y: number }> = {};
     nodes.forEach(n => { layout[n.id] = n.position; });
-
-    const updatedSchema: Schema = { 
-      ...currentSchema, 
-      name: schemaName, 
-      dbml: dbmlInput, 
-      layout,
-      updatedAt: Date.now() 
-    };
-
-    storage.saveSchema(updatedSchema);
-    setSchemas(storage.getSchemas());
-    setCurrentSchema(updatedSchema);
-    setIsSaving(false);
-  }, [dbmlInput, schemaName, nodes, currentSchema]);
-
-  useEffect(() => {
-    if (isInitialLoad.current || !currentSchema) return;
-
+    const hasChanges = dbmlInput !== currentSchema.dbml || 
+                       schemaName !== currentSchema.name ||
+                       JSON.stringify(layout) !== JSON.stringify(currentSchema.layout || {});
+    if (!hasChanges) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     setIsSaving(true);
-    timerRef.current = setTimeout(saveToStorage, 1000);
-
+    timerRef.current = setTimeout(() => {
+      const updatedSchema: Schema = { ...currentSchema, name: schemaName, dbml: dbmlInput, layout, updatedAt: Date.now() };
+      storage.saveSchema(updatedSchema);
+      setSchemas(storage.getSchemas());
+      setCurrentSchema(updatedSchema);
+      setIsSaving(false);
+    }, 1500);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [dbmlInput, schemaName, nodes, saveToStorage]);
+  }, [dbmlInput, schemaName, nodes, currentSchema]);
 
-  // 4. 📏 UI Resizing
-  const startResizing = useCallback(() => {
-    isResizing.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, []);
-
-  const stopResizing = useCallback(() => {
-    isResizing.current = false;
-    document.body.style.cursor = 'default';
-    document.body.style.userSelect = 'auto';
-  }, []);
-
+  // 4. Resize
+  const startResizing = useCallback(() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }, []);
+  const stopResizing = useCallback(() => { isResizing.current = false; document.body.style.cursor = 'default'; }, []);
   const resize = useCallback((e: MouseEvent) => {
     if (!isResizing.current) return;
     const sidebarWidth = isSidebarOpen ? 256 : 0;
     const newWidth = e.clientX - sidebarWidth;
-    if (newWidth > 300 && newWidth < 800) {
-      setLeftPanelWidth(newWidth);
-    }
+    if (newWidth > 300 && newWidth < 800) setLeftPanelWidth(newWidth);
   }, [isSidebarOpen]);
 
   useEffect(() => {
     window.addEventListener('mousemove', resize);
     window.addEventListener('mouseup', stopResizing);
-    return () => {
-      window.removeEventListener('mousemove', resize);
-      window.removeEventListener('mouseup', stopResizing);
-    };
+    return () => { window.removeEventListener('mousemove', resize); window.removeEventListener('mouseup', stopResizing); };
   }, [resize, stopResizing]);
 
   const handleNewSchema = () => {
     const name = window.prompt('New Sketch Name', 'Untitled Sketch') || 'New Sketch';
-    const newSchema: Schema = {
-      id: Date.now().toString(),
-      name,
-      dbml: '',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    const newSchema: Schema = { id: Date.now().toString(), name, dbml: '', createdAt: Date.now(), updatedAt: Date.now() };
     storage.saveSchema(newSchema);
     setSchemas(storage.getSchemas());
     setCurrentSchema(newSchema);
@@ -162,6 +133,7 @@ export default function Home() {
     setNodes([]);
     setEdges([]);
     setUserInput('');
+    if (window.innerWidth <= 768) setIsSidebarOpen(false);
   };
 
   const handleGenerate = async () => {
@@ -169,22 +141,16 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        body: JSON.stringify({ prompt: userInput }),
-      });
+      const res = await fetch('/api/generate', { method: 'POST', body: JSON.stringify({ prompt: userInput }) });
       const data = await res.json();
       if (res.ok && data.dbml) {
         const cleanDbml = data.dbml.replace(/```dbml|```/g, '').trim();
         setDbmlInput(cleanDbml);
+        if (window.innerWidth <= 768) setActiveTab('canvas');
       } else {
-        setError(data.error || 'AI limit reached. Try again.');
+        setError(data.error || 'AI limit reached.');
       }
-    } catch (err) {
-      setError('Connection refused.');
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (err) { setError('Connection refused.'); } finally { setIsLoading(false); }
   };
 
   const handleDelete = (id: string) => {
@@ -218,25 +184,32 @@ export default function Home() {
   };
 
   return (
-    <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100">
-      <aside className={`${isSidebarOpen ? 'w-64' : 'w-0'} border-r-2 border-slate-900 bg-[#f8f9fa] transition-all duration-300 flex flex-col overflow-hidden shrink-0`}>
+    <main className="flex h-screen w-screen overflow-hidden bg-[#fdfdfd] text-slate-900 font-handwritten antialiased selection:bg-indigo-100 relative">
+      {/* 1. Mobile & Desktop Sidebar Overlay/Aside */}
+      <aside className={`
+        fixed md:relative z-50 h-full border-r-2 border-slate-900 bg-[#f8f9fa] transition-all duration-300 flex flex-col overflow-hidden shrink-0
+        ${isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0'}
+      `}>
         <div className="p-5 border-b-2 border-slate-900 flex justify-between items-center bg-white">
           <div className="flex items-center gap-2">
             <PencilLine size={20} className="text-slate-900" />
             <span className="font-bold text-lg tracking-tight">SchemaForge</span>
           </div>
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1">
+            <X size={20} />
+          </button>
         </div>
         <div className="flex-grow overflow-y-auto p-3 space-y-4">
-          <button onClick={handleNewSchema} className="w-full py-2 px-4 border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-white rounded-xl text-xs font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2 mb-2">
+          <button onClick={handleNewSchema} className="w-full py-2 px-4 border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-white rounded-xl text-xs font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2">
             <FilePlus size={14} /> New Sketch
           </button>
           <div className="px-2 pt-2">
-            <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1 text-slate-900">Saved Sketches</h2>
+            <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Saved Sketches</h2>
             <div className="space-y-2">
               {schemas.map((s) => (
                 <div key={s.id} 
                   className={`group p-3 rounded-lg border-2 transition-all flex justify-between items-center ${currentSchema?.id === s.id ? 'bg-indigo-50 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white border-slate-200 hover:border-slate-400'}`}
-                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); setSchemaName(s.name); }}
+                  onClick={() => { setCurrentSchema(s); setDbmlInput(s.dbml); setSchemaName(s.name); if (window.innerWidth <= 768) setIsSidebarOpen(false); }}
                 >
                   <span className="text-xs font-bold truncate pr-2">{s.name}</span>
                   <Trash2 size={14} className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all cursor-pointer" onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }} />
@@ -247,33 +220,66 @@ export default function Home() {
         </div>
       </aside>
 
-      <div className="flex-grow flex flex-col min-w-0">
+      {/* Main Workspace */}
+      <div className="flex-grow flex flex-col min-w-0 h-full">
+        {/* Top Navbar */}
         <nav className="h-14 border-b-2 border-slate-900 bg-white flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
-          <div className="flex items-center gap-4 flex-grow max-w-xl text-slate-900">
+          <div className="flex items-center gap-3 flex-grow max-w-xl">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-900 border border-slate-200">
-              {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+              <Menu size={18} />
             </button>
-            <div className="h-4 w-px bg-slate-200" />
-            <input value={schemaName} onChange={(e) => setSchemaName(e.target.value)} placeholder="Untitled Sketch" className="flex-grow text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-indigo-50/50 transition-colors text-slate-900 placeholder:text-slate-300" />
-            {isSaving && <span className="text-[10px] text-slate-400 animate-pulse shrink-0">Saving...</span>}
+            <div className="h-4 w-px bg-slate-200 hidden md:block" />
+            <input value={schemaName} onChange={(e) => setSchemaName(e.target.value)} placeholder="Untitled Sketch" className="flex-grow text-sm font-bold border-2 border-slate-900 px-3 py-1 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-indigo-50/50 transition-colors text-slate-900 placeholder:text-slate-300 min-w-0" />
+            {isSaving && <span className="text-[10px] text-slate-400 animate-pulse shrink-0 hidden sm:block">Saving...</span>}
           </div>
-          <div className="flex items-center gap-3 ml-4">
-            <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-              <Download size={14} /> Export DBML
+          <div className="flex items-center gap-2 font-sans ml-2">
+            <button onClick={handleDownload} className="p-2 md:px-4 md:py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+              <Download size={16} className="md:mr-2 inline" /><span className="hidden md:inline">Export DBML</span>
             </button>
           </div>
         </nav>
 
-        <div className="flex-grow flex overflow-hidden bg-white">
-          <div style={{ width: `${leftPanelWidth}px` }} className="border-r-2 border-slate-900 flex flex-col bg-[#fcfcfc] z-10 shrink-0 relative">
-            <div className="flex-grow flex flex-col p-4 space-y-4">
-              <div className="relative">
-                <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Ask AI to design or update..." className="w-full h-24 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 focus:border-indigo-600 outline-none transition-all placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900" />
+        {/* Mobile Tabs (Top) */}
+        <div className="md:hidden flex border-b-2 border-slate-900 bg-[#f8f9fa] p-1 font-sans">
+          {(['prompt', 'code', 'canvas'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-grow py-2 text-[10px] font-bold uppercase tracking-tighter rounded-lg transition-all flex items-center justify-center gap-1 ${
+                activeTab === tab ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500'
+              }`}
+            >
+              {tab === 'prompt' && <Sparkles size={12} />}
+              {tab === 'code' && <Code size={12} />}
+              {tab === 'canvas' && <Eye size={12} />}
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Editor & Canvas Container */}
+        <div className="flex-grow flex overflow-hidden bg-white relative">
+          
+          {/* Editor/Prompt Pane (Hidden on mobile unless tab active) */}
+          <div 
+            style={{ width: window.innerWidth > 768 ? `${leftPanelWidth}px` : '100%' }} 
+            className={`
+              ${activeTab === 'canvas' ? 'hidden md:flex' : 'flex'}
+              border-r-2 border-slate-900 flex-col bg-[#fcfcfc] z-10 shrink-0 relative
+              ${activeTab !== 'canvas' ? 'absolute inset-0 md:relative' : ''}
+            `}
+          >
+            <div className="flex-grow flex flex-col p-4 space-y-4 overflow-hidden">
+              {/* AI Prompt (Hidden on mobile if 'code' tab active) */}
+              <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
+                <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Ask AI to design..." className="w-full h-24 md:h-32 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.05)] text-slate-900" />
                 <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-3 right-3 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all disabled:opacity-30 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   {isLoading ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}
                 </button>
               </div>
-              <div className="flex-grow flex flex-col min-h-0 text-slate-900">
+
+              {/* Code Editor (Hidden on mobile if 'prompt' tab active) */}
+              <div className={`${activeTab === 'prompt' ? 'hidden md:flex' : 'flex'} flex-grow flex flex-col min-h-0 text-slate-900`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
                   <Code size={12} /><span>DBML Blueprint</span>
                 </div>
@@ -283,14 +289,16 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-              {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px]"><AlertCircle size={14} /><span>{error}</span></div>}
+              {error && <div className="p-3 bg-red-50 border-2 border-red-900 rounded-xl flex items-center gap-2 text-red-900 text-[11px] shrink-0"><AlertCircle size={14} /><span>{error}</span></div>}
             </div>
-            <div onMouseDown={startResizing} className="absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 flex items-center justify-center group">
+            {/* Desktop Resize Handle */}
+            <div onMouseDown={startResizing} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group">
               <div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" />
             </div>
           </div>
 
-          <div className="flex-grow relative overflow-hidden bg-[#fdfdfd]">
+          {/* Canvas Pane */}
+          <div className={`flex-grow relative overflow-hidden bg-[#fdfdfd] ${activeTab !== 'canvas' ? 'hidden md:block' : 'block'}`}>
             <VisualCanvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} />
             {!dbmlInput && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-900">
