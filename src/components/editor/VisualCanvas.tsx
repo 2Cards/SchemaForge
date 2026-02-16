@@ -46,14 +46,14 @@ export const VisualCanvas = ({ nodes, edges, onNodesChange, onEdgesChange, onCon
           <defs>
             <marker
               id="crowfoot-many"
-              markerWidth="12"
-              markerHeight="12"
-              refX="10"
-              refY="6"
+              markerWidth="15"
+              markerHeight="15"
+              refX="14"
+              refY="7.5"
               orient="auto"
             >
               <path 
-                d="M 2 2 L 10 6 L 2 10 M 10 2 L 10 10" 
+                d="M 2 3.5 L 12 7.5 L 2 11.5 M 12 2 L 12 13" 
                 fill="none" 
                 stroke="#1e293b" 
                 strokeWidth="2" 
@@ -63,14 +63,14 @@ export const VisualCanvas = ({ nodes, edges, onNodesChange, onEdgesChange, onCon
             </marker>
             <marker
               id="crowfoot-one"
-              markerWidth="12"
-              markerHeight="12"
-              refX="10"
-              refY="6"
+              markerWidth="15"
+              markerHeight="15"
+              refX="14"
+              refY="7.5"
               orient="auto"
             >
               <path 
-                d="M 10 2 L 10 10 M 6 2 L 6 10" 
+                d="M 12 2 L 12 13 M 7 2 L 7 13" 
                 fill="none" 
                 stroke="#1e293b" 
                 strokeWidth="2" 

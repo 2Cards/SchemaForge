@@ -57,11 +57,7 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []) => {
         target: targetEndpoint.tableName,
         targetHandle: `${targetFieldName}-target`,
         type: 'smoothstep',
-        label: label,
-        labelStyle: { fill: '#1e293b', fontWeight: 800, fontSize: 10, fontFamily: 'inherit' },
-        labelBgPadding: [4, 2],
-        labelBgBorderRadius: 4,
-        labelBgStyle: { fill: '#f8f9fa', fillOpacity: 1, stroke: '#1e293b', strokeWidth: 1 },
+        // Removed text labels to reduce clutter as Crow's Foot markers provide the info
         style: { stroke: '#1e293b', strokeWidth: 2.5 },
         markerEnd: relTarget === '1' ? 'crowfoot-one' : 'crowfoot-many',
         markerStart: relSource === '1' ? 'crowfoot-one' : 'crowfoot-many',
