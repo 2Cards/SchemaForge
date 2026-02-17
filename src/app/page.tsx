@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
-import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, updateEdge } from 'reactflow';
+import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, updateEdge, Connection } from 'reactflow';
 import Editor from 'react-simple-code-editor';
 import { toPng } from 'html-to-image';
 import dagre from 'dagre';
@@ -92,14 +92,20 @@ function HomeContent() {
     });
   }, [setDbmlInput]);
 
-  const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: any) => {
+  const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: Connection) => {
     const { source, sourceHandle, target, targetHandle } = newConnection;
     const oldSourceField = oldEdge.sourceHandle?.split('-')[0];
     const oldTargetField = oldEdge.targetHandle?.split('-')[0];
     const newSourceField = sourceHandle?.split('-')[0];
     const newTargetField = targetHandle?.split('-')[0];
-    const isSameEdge = source === oldEdge.source && target === oldEdge.target && newSourceField === oldSourceField && newTargetField === oldTargetField;
-    if (isSameEdge) {
+
+    // Strictly enforce same node and same field - only handle side changes
+    const isSameLogicalEdge = source === oldEdge.source && 
+                              target === oldEdge.target && 
+                              newSourceField === oldSourceField && 
+                              newTargetField === oldTargetField;
+
+    if (isSameLogicalEdge) {
       setEdges((els) => updateEdge(oldEdge, newConnection, els));
     }
   }, [setEdges]);
@@ -152,9 +158,11 @@ function HomeContent() {
     setSchemaName(currentSchema.name);
     const { nodes: parsedNodes, edges: parsedEdges, error: parseErr } = parseDBML(currentSchema.dbml);
     setValidationError(parseErr);
-    const layoutNodes = parsedNodes.map(n => ({ ...n, position: currentSchema.layout?.[n.id] || n.position }));
+    const layout = currentSchema.layout || {};
+    const layoutNodes = parsedNodes.map(n => ({ ...n, position: layout[n.id] || n.position }));
     setNodes(layoutNodes);
-    const savedHandles = (currentSchema.layout?.edgeHandles || {}) as Record<string, any>;
+    
+    const savedHandles = (layout.edgeHandles || {}) as Record<string, any>;
     const edgesWithHandles = parsedEdges.map(e => {
       if (savedHandles[e.id]) { return { ...e, sourceHandle: savedHandles[e.id].sh, targetHandle: savedHandles[e.id].th }; }
       return e;
@@ -201,21 +209,6 @@ function HomeContent() {
     }, 1500);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [dbmlInput, schemaName, nodes, edges]);
-
-  const startResizing = useCallback(() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }, []);
-  const stopResizing = useCallback(() => { isResizing.current = false; document.body.style.cursor = 'default'; }, []);
-  const resize = useCallback((e: MouseEvent) => {
-    if (!isResizing.current) return;
-    const sidebarWidth = isSidebarOpen ? 256 : 0;
-    const newWidth = e.clientX - sidebarWidth;
-    if (newWidth > 300 && newWidth < 800) setLeftPanelWidth(newWidth);
-  }, [isSidebarOpen]);
-
-  useEffect(() => {
-    window.addEventListener('mousemove', resize);
-    window.addEventListener('mouseup', stopResizing);
-    return () => { window.removeEventListener('mousemove', resize); window.removeEventListener('mouseup', stopResizing); };
-  }, [resize, stopResizing]);
 
   const handleNewSchema = () => {
     const name = window.prompt('New Sketch Name', 'Untitled Sketch') || 'New Sketch';
@@ -349,7 +342,7 @@ function HomeContent() {
                 </div>
               </div>
             </div>
-            <div onMouseDown={startResizing} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group"><div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" /></div>
+            <div onMouseDown={() => (isResizing.current = true)} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group"><div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" /></div>
           </div>
           <div className={`flex-grow relative overflow-hidden bg-[#fdfdfd] ${activeTab !== 'canvas' ? 'hidden md:block' : 'block'}`}>
             <VisualCanvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onEdgeUpdate={onEdgeUpdate} onTableColorChange={onTableColorChange} />
