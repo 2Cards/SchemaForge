@@ -9,26 +9,63 @@ export interface Schema {
 
 const STORAGE_KEY = 'schemaforge_schemas';
 
-const DEFAULT_DBML = `// DBRaw Demo Schema v2 ⚙️
+const DEFAULT_DBML = `// DBRaw Default Schema ⚙️
 
-Table users {
-  id uuid [pk]
-  username varchar
-  email varchar
+Table users [headercolor: #2ecc71] {
+  id uuid [pk, default: \`gen_random_uuid()\`]
+  username varchar [not null, unique]
+  email varchar [not null, unique]
+  password_hash varchar [not null]
+  is_active boolean [default: true]
+  metadata jsonb
+  created_at timestamp [default: \`now()\`]
+  updated_at timestamp [default: \`now()\`]
+
+  indexes {
+    email [unique]
+    username [unique]
+  }
 }
 
-Table posts {
-  id uuid [pk]
-  user_id uuid
-  title varchar
+Table posts [headercolor: #3498db] {
+  id uuid [pk, default: \`gen_random_uuid()\`]
+  user_id uuid [not null]
+  title varchar [not null]
   body text
+  tags varchar[]
+  status post_status [default: 'draft']
+  view_count integer [default: 0]
+  created_at timestamp [default: \`now()\`]
+  updated_at timestamp [default: \`now()\`]
+
+  indexes {
+    user_id
+    created_at
+    (user_id, created_at)
+  }
 }
 
-Table comments {
-  id uuid [pk]
-  post_id uuid
-  user_id uuid
-  content text
+Table comments [headercolor: #1abc9c] {
+  id uuid [pk, default: \`gen_random_uuid()\`]
+  post_id uuid [not null]
+  user_id uuid [not null]
+  content text [not null]
+  is_flagged boolean [default: false]
+  created_at timestamp [default: \`now()\`]
+  updated_at timestamp [default: \`now()\`]
+
+  indexes {
+    post_id
+    user_id
+    created_at
+  }
+}
+
+Enum post_status {
+  draft
+  published
+  archived
+  deleted
 }
 
 Ref: users.id < posts.user_id
@@ -37,8 +74,8 @@ Ref: users.id < comments.user_id`;
 
 const DEFAULT_LAYOUT = {
   "users": { "x": 0, "y": 0 },
-  "posts": { "x": 400, "y": 0 },
-  "comments": { "x": 400, "y": 400 }
+  "posts": { "x": 450, "y": 0 },
+  "comments": { "x": 900, "y": 0 }
 };
 
 export const storage = {
@@ -70,8 +107,8 @@ export const storage = {
 
   initDefault: (): Schema => {
     const schema: Schema = {
-      id: 'demo-v2',
-      name: 'Starter Schema (Demo)',
+      id: 'demo-v3',
+      name: 'Modern Web App (Demo)',
       dbml: DEFAULT_DBML,
       layout: DEFAULT_LAYOUT,
       createdAt: Date.now(),
