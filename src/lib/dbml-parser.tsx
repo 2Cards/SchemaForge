@@ -61,14 +61,16 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
       const relTarget = targetEndpoint.relation === '1' ? '1' : 'N';
       const label = `${relSource}:${relTarget}`;
 
-      // Handle sides (default to left/right logic if not specified in comments/meta)
-      // For now we use -right for source and -left for target as default visual standard
+      // We look for side hints in comments or metadata if we wanted to be fancy, 
+      // but for now we'll store the side in the edge ID or handle ID during sync.
+      // To ensure persistence of "sides" (left/right), we'll try to extract them from existing edges if available.
+      
       return {
         id: `ref-${index}`,
         source: sourceEndpoint.tableName,
-        sourceHandle: `${sourceFieldName}-right`,
+        sourceHandle: `${sourceFieldName}-right`, // Default to right
         target: targetEndpoint.tableName,
-        targetHandle: `${targetFieldName}-left`,
+        targetHandle: `${targetFieldName}-left`,  // Default to left
         type: 'smoothstep',
         label: label,
         labelStyle: { fill: '#1e293b', fontWeight: 800, fontSize: 10, fontFamily: 'inherit' },

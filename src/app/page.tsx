@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
-import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, getRectOfNodes, getTransformForBounds, updateEdge } from 'reactflow';
+import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, updateEdge } from 'reactflow';
 import Editor from 'react-simple-code-editor';
 import { toPng } from 'html-to-image';
 import dagre from 'dagre';
@@ -14,8 +14,8 @@ import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-sql';
 
 import { 
-  Loader2, Save, Database, Trash2, 
-  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
+  Loader2, Database, Trash2, 
+  Code, Sparkles, AlertCircle, PencilLine, FilePlus, Download,
   Menu, X, Eye, Image as ImageIcon, Wand2, Terminal
 } from 'lucide-react';
 
@@ -79,27 +79,35 @@ function HomeContent() {
     setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100);
   }, [nodes, edges, setNodes, fitView]);
 
+  // Enhanced onConnect: update code instead of just canvas
   const onConnect = useCallback((params: any) => {
     const { source, sourceHandle, target, targetHandle } = params;
     if (!source || !sourceHandle || !target || !targetHandle) return;
+
     const sourceField = sourceHandle.split('-')[0];
     const targetField = targetHandle.split('-')[0];
+
     const newRef = `\n\nRef: ${source}.${sourceField} > ${target}.${targetField}`;
     setDbmlInput(prev => prev.trim() + newRef);
   }, [setDbmlInput]);
 
+  // Handle re-connecting existing edges
   const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: any) => {
     setDbmlInput(prev => {
-      // Find and replace the old Ref line
-      const sourceField = oldEdge.sourceHandle?.split('-')[0];
-      const targetField = oldEdge.targetHandle?.split('-')[0];
-      const oldRefRegex = new RegExp(`Ref:\\s*${oldEdge.source}\\.${sourceField}\\s*(>|<|-)\\s*${oldEdge.target}\\.${targetField}`, 'i');
+      const oldSourceField = oldEdge.sourceHandle?.split('-')[0];
+      const oldTargetField = oldEdge.targetHandle?.split('-')[0];
+      
+      // Match various Ref syntaxes
+      const oldRefRegex = new RegExp(`Ref:\\s*${oldEdge.source}\\.${oldSourceField}\\s*(>|<|-)\\s*${oldEdge.target}\\.${oldTargetField}`, 'i');
       
       const newSourceField = newConnection.sourceHandle?.split('-')[0];
       const newTargetField = newConnection.targetHandle?.split('-')[0];
       const newRef = `Ref: ${newConnection.source}.${newSourceField} > ${newConnection.target}.${newTargetField}`;
       
-      return prev.replace(oldRefRegex, newRef);
+      if (oldRefRegex.test(prev)) {
+        return prev.replace(oldRefRegex, newRef);
+      }
+      return prev + `\n${newRef}`;
     });
     setEdges((els) => updateEdge(oldEdge, newConnection, els));
   }, [setEdges, setDbmlInput]);
@@ -165,8 +173,10 @@ function HomeContent() {
     if (!parseErr) {
       const currentNodesJson = JSON.stringify(nodes.map(n => ({ id: n.id, data: n.data })));
       const nextNodesJson = JSON.stringify(nextNodes.map(n => ({ id: n.id, data: n.data })));
-      const currentEdgesJson = JSON.stringify(edges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })));
-      const nextEdgesJson = JSON.stringify(nextEdges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })));
+      // Enhanced comparison: include handle sides
+      const currentEdgesJson = JSON.stringify(edges.map(e => ({ source: e.source, target: e.target, sh: e.sourceHandle, th: e.targetHandle })));
+      const nextEdgesJson = JSON.stringify(nextEdges.map(e => ({ source: e.source, target: e.target, sh: e.sourceHandle, th: e.targetHandle })));
+      
       if (currentNodesJson !== nextNodesJson) setNodes(nextNodes);
       if (currentEdgesJson !== nextEdgesJson) setEdges(nextEdges);
     }
@@ -177,6 +187,9 @@ function HomeContent() {
     if (!currentSchema) return;
     const layout: Record<string, { x: number; y: number }> = {};
     nodes.forEach(n => { layout[n.id] = n.position; });
+    const edgeLayout: Record<string, { sh: string, th: string }> = {};
+    edges.forEach(e => { edgeLayout[e.id] = { sh: e.sourceHandle || '', th: e.targetHandle || '' } });
+
     const hasChanges = dbmlInput !== currentSchema.dbml || schemaName !== currentSchema.name || JSON.stringify(layout) !== JSON.stringify(currentSchema.layout || {});
     if (!hasChanges) return;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -189,7 +202,7 @@ function HomeContent() {
       setIsSaving(false);
     }, 1500);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [dbmlInput, schemaName, nodes]);
+  }, [dbmlInput, schemaName, nodes, edges]);
 
   const startResizing = useCallback(() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }, []);
   const stopResizing = useCallback(() => { isResizing.current = false; document.body.style.cursor = 'default'; }, []);
