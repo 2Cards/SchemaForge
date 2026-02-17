@@ -9,56 +9,36 @@ export interface Schema {
 
 const STORAGE_KEY = 'schemaforge_schemas';
 
-const DEFAULT_DBML = `// Welcome to DBRaw ⚙️
-// This is a demo schema to get you started.
+const DEFAULT_DBML = `// DBRaw Demo Schema v2 ⚙️
 
-Table users [headercolor: #3498db] {
+Table users {
   id uuid [pk]
-  username varchar [unique]
-  email varchar [unique]
-  full_name varchar
-  created_at timestamp
+  username varchar
+  email varchar
 }
 
-Table posts [headercolor: #e74c3c] {
+Table posts {
   id uuid [pk]
   user_id uuid
   title varchar
-  content text
-  status varchar
-  created_at timestamp
+  body text
 }
 
-Table comments [headercolor: #2ecc71] {
+Table comments {
   id uuid [pk]
   post_id uuid
   user_id uuid
   content text
-  created_at timestamp
-}
-
-Table tags [headercolor: #f39c12] {
-  id uuid [pk]
-  name varchar [unique]
-}
-
-Table post_tags [headercolor: #95a5a6] {
-  post_id uuid
-  tag_id uuid
 }
 
 Ref: users.id < posts.user_id
 Ref: posts.id < comments.post_id
-Ref: users.id < comments.user_id
-Ref: posts.id < post_tags.post_id
-Ref: tags.id < post_tags.tag_id`;
+Ref: users.id < comments.user_id`;
 
 const DEFAULT_LAYOUT = {
   "users": { "x": 0, "y": 0 },
   "posts": { "x": 400, "y": 0 },
-  "comments": { "x": 400, "y": 400 },
-  "tags": { "x": 800, "y": 400 },
-  "post_tags": { "x": 800, "y": 0 }
+  "comments": { "x": 400, "y": 400 }
 };
 
 export const storage = {
@@ -90,8 +70,8 @@ export const storage = {
 
   initDefault: (): Schema => {
     const schema: Schema = {
-      id: 'demo-v1',
-      name: 'Blog Engine (Demo)',
+      id: 'demo-v2',
+      name: 'Starter Schema (Demo)',
       dbml: DEFAULT_DBML,
       layout: DEFAULT_LAYOUT,
       createdAt: Date.now(),

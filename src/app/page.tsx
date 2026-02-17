@@ -95,9 +95,11 @@ function HomeContent() {
   useEffect(() => {
     let saved = storage.getSchemas();
     
-    if (saved.length === 0) {
+    // Check if demo-v2 exists, if not - add it
+    const hasDemo = saved.some(s => s.id === 'demo-v2');
+    if (!hasDemo) {
       const demoSchema = storage.initDefault();
-      saved = [demoSchema];
+      saved = [demoSchema, ...saved];
     }
     
     setSchemas(saved);
