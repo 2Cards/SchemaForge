@@ -1,17 +1,18 @@
 'use client';
 
 import React from 'react';
-import ReactFlow, { 
-  Background, 
-  Controls, 
-  Node, 
+import ReactFlow, {
+  Background,
+  Controls,
+  Node,
   Edge,
   ConnectionMode,
   BackgroundVariant,
   OnNodesChange,
   OnEdgesChange,
   OnConnect,
-  OnEdgeUpdateFunc
+  OnEdgeUpdateFunc,
+  NodeDragHandler
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { TableNode } from './TableNode';
@@ -27,19 +28,19 @@ interface VisualCanvasProps {
   onEdgesChange: OnEdgesChange;
   onConnect?: OnConnect;
   onEdgeUpdate?: OnEdgeUpdateFunc;
-  onNodeDragStop?: () => void;
+  onNodeDragStop?: NodeDragHandler;
   onTableColorChange?: (tableName: string, color: string) => void;
 }
 
-export const VisualCanvas = ({ 
-  nodes, 
-  edges, 
-  onNodesChange, 
-  onEdgesChange, 
+export const VisualCanvas = ({
+  nodes,
+  edges,
+  onNodesChange,
+  onEdgesChange,
   onConnect,
   onEdgeUpdate,
   onNodeDragStop,
-  onTableColorChange 
+  onTableColorChange
 }: VisualCanvasProps) => {
   const nodeTypesMemo = React.useMemo(() => ({
     dbTable: (props: any) => <TableNode {...props} onColorChange={onTableColorChange} />,

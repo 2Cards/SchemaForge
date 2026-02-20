@@ -13,8 +13,8 @@ import { highlight, languages } from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-sql';
 
-import { 
-  Loader2, Database, Trash2, 
+import {
+  Loader2, Database, Trash2,
   Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
   Menu, X, Eye, Image as ImageIcon, Wand2, Terminal
 } from 'lucide-react';
@@ -56,7 +56,7 @@ function HomeContent() {
   const [schemaName, setSchemaName] = useState('');
   const [activeTab, setActiveTab] = useState<MobileTab>('prompt');
   const [isMobile, setIsMobile] = useState(false);
-  
+
   const [leftPanelWidth, setLeftPanelWidth] = useState(450);
   const isResizing = useRef(false);
   const isInitialLoad = useRef(true);
@@ -66,18 +66,29 @@ function HomeContent() {
   const { getNodes, fitView } = useReactFlow();
 
   // Smart Edge Positioning Logic
+  // IMPORTANT: always reads field name from edge.data.sourceField / targetField
+  // (never from edge.sourceHandle, which may already have a -left/-right suffix)
   const calculateSmartEdges = useCallback((rawEdges: Edge[], currentNodes: Node[], overrides: Record<string, EdgeHandleMetadata> = {}) => {
     return rawEdges.map(edge => {
       const sourceNode = currentNodes.find(n => n.id === edge.source);
       const targetNode = currentNodes.find(n => n.id === edge.target);
-      const manual = overrides[edge.id];
 
       if (!sourceNode || !targetNode) return edge;
 
-      let sSide = manual?.sh?.split('-')[1];
-      let tSide = manual?.th?.split('-')[1];
+      // Base field name is always stored in edge.data — safe even with dashes in field names
+      const sourceField: string = edge.data?.sourceField ?? edge.sourceHandle ?? '';
+      const targetField: string = edge.data?.targetField ?? edge.targetHandle ?? '';
 
-      if (!sSide || !tSide) {
+      // If there's a manual override saved in layout, use it; otherwise auto-calculate
+      const manual = overrides[edge.id];
+      let sSide: string;
+      let tSide: string;
+
+      if (manual?.sh && manual?.th) {
+        // manual override stores full handle like "user_id-right" → extract side
+        sSide = manual.sh.endsWith('-left') ? 'left' : 'right';
+        tSide = manual.th.endsWith('-left') ? 'left' : 'right';
+      } else {
         const isSourceLeftOfTarget = sourceNode.position.x < targetNode.position.x;
         sSide = isSourceLeftOfTarget ? 'right' : 'left';
         tSide = isSourceLeftOfTarget ? 'left' : 'right';
@@ -85,8 +96,8 @@ function HomeContent() {
 
       return {
         ...edge,
-        sourceHandle: `${edge.sourceHandle}-${sSide}`,
-        targetHandle: `${edge.targetHandle}-${tSide}`,
+        sourceHandle: `${sourceField}-${sSide}`,
+        targetHandle: `${targetField}-${tSide}`,
       };
     });
   }, []);
@@ -205,11 +216,12 @@ function HomeContent() {
     }
   }, [dbmlInput]);
 
-  const onNodeDragStop = useCallback(() => {
+  const onNodeDragStop = useCallback((_event: React.MouseEvent, _node: Node) => {
     const currentNodes = getNodes();
-    const currentOverrides = (currentSchema?.layout?.edgeHandles || {}) as Record<string, EdgeHandleMetadata>;
-    setEdges(prevEdges => calculateSmartEdges(prevEdges.map(e => ({ ...e, sourceHandle: e.sourceHandle?.split('-')[0], targetHandle: e.targetHandle?.split('-')[0] })), currentNodes, currentOverrides));
-  }, [getNodes, currentSchema, calculateSmartEdges, setEdges]);
+    // No override here — we want pure auto-calculation based on current positions
+    // edge.data.sourceField / targetField always holds the raw field name (set by the parser)
+    setEdges(prevEdges => calculateSmartEdges(prevEdges, currentNodes, {}));
+  }, [getNodes, calculateSmartEdges, setEdges]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -267,7 +279,7 @@ function HomeContent() {
         setUserInput('');
         if (isMobile) setActiveTab('canvas');
       }
-    } catch (err) {} finally { setIsLoading(false); }
+    } catch (err) { } finally { setIsLoading(false); }
   };
 
   const handleDelete = (id: string) => {
@@ -304,7 +316,7 @@ function HomeContent() {
       a.setAttribute('download', `${schemaName || 'schema'}.png`);
       a.setAttribute('href', dataUrl);
       a.click();
-    } catch (err) {} finally { setIsLoading(false); }
+    } catch (err) { } finally { setIsLoading(false); }
   };
 
   return (
