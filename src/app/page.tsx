@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VisualCanvas } from '@/components/editor/VisualCanvas';
 import { storage, Schema } from '@/lib/storage';
 import { parseDBML } from '@/lib/dbml-parser';
-import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, updateEdge } from 'reactflow';
+import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFlow, updateEdge, Connection } from 'reactflow';
 import Editor from 'react-simple-code-editor';
 import { toPng } from 'html-to-image';
 import dagre from 'dagre';
@@ -30,6 +30,11 @@ const dbmlHighlight = (code: string) => {
 };
 
 type MobileTab = 'prompt' | 'code' | 'canvas';
+
+interface EdgeHandleMetadata {
+  sh?: string | null;
+  th?: string | null;
+}
 
 export default function Home() {
   return (
@@ -60,6 +65,32 @@ function HomeContent() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const { getNodes, fitView } = useReactFlow();
 
+  // Smart Edge Positioning Logic
+  const calculateSmartEdges = useCallback((rawEdges: Edge[], currentNodes: Node[], overrides: Record<string, EdgeHandleMetadata> = {}) => {
+    return rawEdges.map(edge => {
+      const sourceNode = currentNodes.find(n => n.id === edge.source);
+      const targetNode = currentNodes.find(n => n.id === edge.target);
+      const manual = overrides[edge.id];
+
+      if (!sourceNode || !targetNode) return edge;
+
+      let sSide = manual?.sh?.split('-')[1];
+      let tSide = manual?.th?.split('-')[1];
+
+      if (!sSide || !tSide) {
+        const isSourceLeftOfTarget = sourceNode.position.x < targetNode.position.x;
+        sSide = isSourceLeftOfTarget ? 'right' : 'left';
+        tSide = isSourceLeftOfTarget ? 'left' : 'right';
+      }
+
+      return {
+        ...edge,
+        sourceHandle: `${edge.sourceHandle}-${sSide}`,
+        targetHandle: `${edge.targetHandle}-${tSide}`,
+      };
+    });
+  }, []);
+
   const handleAutoLayout = useCallback((currentNodes?: Node[], currentEdges?: Edge[]) => {
     const nodesToLayout = currentNodes || nodes;
     const edgesToLayout = currentEdges || edges;
@@ -75,8 +106,9 @@ function HomeContent() {
       return { ...node, position: { x: nodeWithPosition.x - 125, y: nodeWithPosition.y - 40 } };
     });
     setNodes(layoutedNodes);
+    setEdges(calculateSmartEdges(edgesToLayout, layoutedNodes));
     setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100);
-  }, [nodes, edges, setNodes, fitView]);
+  }, [nodes, edges, setNodes, setEdges, fitView, calculateSmartEdges]);
 
   const onConnect = useCallback((params: any) => {
     const { source, sourceHandle, target, targetHandle } = params;
@@ -92,14 +124,13 @@ function HomeContent() {
     });
   }, [setDbmlInput]);
 
-  const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: any) => {
+  const onEdgeUpdate = useCallback((oldEdge: Edge, newConnection: Connection) => {
     const { source, sourceHandle, target, targetHandle } = newConnection;
     const oldSourceField = oldEdge.sourceHandle?.split('-')[0];
     const oldTargetField = oldEdge.targetHandle?.split('-')[0];
     const newSourceField = sourceHandle?.split('-')[0];
     const newTargetField = targetHandle?.split('-')[0];
-    const isSameEdge = source === oldEdge.source && target === oldEdge.target && newSourceField === oldSourceField && newTargetField === oldTargetField;
-    if (isSameEdge) {
+    if (source === oldEdge.source && target === oldEdge.target && newSourceField === oldSourceField && newTargetField === oldTargetField) {
       setEdges((els) => updateEdge(oldEdge, newConnection, els));
     }
   }, [setEdges]);
@@ -127,8 +158,6 @@ function HomeContent() {
     if (saved.length === 0 && storage.isFirstRun()) {
       const demoSchema = storage.initDefault();
       saved = [demoSchema];
-      const { nodes: dNodes, edges: dEdges } = parseDBML(demoSchema.dbml);
-      setTimeout(() => handleAutoLayout(dNodes, dEdges), 500);
     }
     setSchemas(saved);
     const lastId = storage.getLastSchemaId();
@@ -152,34 +181,35 @@ function HomeContent() {
     setSchemaName(currentSchema.name);
     const { nodes: parsedNodes, edges: parsedEdges, error: parseErr } = parseDBML(currentSchema.dbml);
     setValidationError(parseErr);
-    const layoutNodes = parsedNodes.map(n => ({ ...n, position: currentSchema.layout?.[n.id] || n.position }));
+    const layout = currentSchema.layout || {};
+    const layoutNodes = parsedNodes.map(n => ({ ...n, position: layout[n.id] || n.position }));
+    const savedHandles = (layout.edgeHandles || {}) as Record<string, EdgeHandleMetadata>;
     setNodes(layoutNodes);
-    const savedHandles = (currentSchema.layout?.edgeHandles || {}) as Record<string, any>;
-    const edgesWithHandles = parsedEdges.map(e => {
-      if (savedHandles[e.id]) { return { ...e, sourceHandle: savedHandles[e.id].sh, targetHandle: savedHandles[e.id].th }; }
-      return e;
-    });
-    setEdges(edgesWithHandles);
+    setEdges(calculateSmartEdges(parsedEdges, layoutNodes, savedHandles));
     setTimeout(() => fitView({ padding: 0.2 }), 50);
-  }, [currentSchema?.id]);
+  }, [currentSchema?.id, calculateSmartEdges]);
 
   useEffect(() => {
     if (isInitialLoad.current || !currentSchema) return;
     const { nodes: nextNodes, edges: nextEdges, error: parseErr } = parseDBML(dbmlInput, nodes);
     setValidationError(parseErr);
     if (!parseErr) {
-      if (JSON.stringify(nodes.map(n => ({ id: n.id, data: n.data }))) !== JSON.stringify(nextNodes.map(n => ({ id: n.id, data: n.data })))) { setNodes(nextNodes); }
-      const currentHandleState = (currentSchema.layout?.edgeHandles || {}) as Record<string, any>;
-      const nextEdgesWithHandles = nextEdges.map(e => {
-        const existing = edges.find(old => old.id === e.id) || { sourceHandle: currentHandleState[e.id]?.sh, targetHandle: currentHandleState[e.id]?.th };
-        if (existing.sourceHandle) { return { ...e, sourceHandle: existing.sourceHandle, targetHandle: existing.targetHandle }; }
-        return e;
-      });
-      const currentEdgesJson = JSON.stringify(edges.map(e => ({ id: e.id, sh: e.sourceHandle, th: e.targetHandle })));
-      const nextEdgesJson = JSON.stringify(nextEdgesWithHandles.map(e => ({ id: e.id, sh: e.sourceHandle, th: e.targetHandle })));
-      if (currentEdgesJson !== nextEdgesJson) { setEdges(nextEdgesWithHandles); }
+      if (JSON.stringify(nodes.map(n => ({ id: n.id, data: n.data }))) !== JSON.stringify(nextNodes.map(n => ({ id: n.id, data: n.data })))) {
+        setNodes(nextNodes);
+      }
+      const currentOverrides = (currentSchema.layout?.edgeHandles || {}) as Record<string, EdgeHandleMetadata>;
+      const nextEdgesProcessed = calculateSmartEdges(nextEdges, nodes, currentOverrides);
+      if (JSON.stringify(edges.map(e => ({ id: e.id, sh: e.sourceHandle, th: e.targetHandle }))) !== JSON.stringify(nextEdgesProcessed.map(e => ({ id: e.id, sh: e.sourceHandle, th: e.targetHandle })))) {
+        setEdges(nextEdgesProcessed);
+      }
     }
   }, [dbmlInput]);
+
+  const onNodeDragStop = useCallback(() => {
+    const currentNodes = getNodes();
+    const currentOverrides = (currentSchema?.layout?.edgeHandles || {}) as Record<string, EdgeHandleMetadata>;
+    setEdges(prevEdges => calculateSmartEdges(prevEdges.map(e => ({ ...e, sourceHandle: e.sourceHandle?.split('-')[0], targetHandle: e.targetHandle?.split('-')[0] })), currentNodes, currentOverrides));
+  }, [getNodes, currentSchema, calculateSmartEdges, setEdges]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -202,7 +232,6 @@ function HomeContent() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [dbmlInput, schemaName, nodes, edges]);
 
-  const startResizing = useCallback(() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }, []);
   const stopResizing = useCallback(() => { isResizing.current = false; document.body.style.cursor = 'default'; }, []);
   const resize = useCallback((e: MouseEvent) => {
     if (!isResizing.current) return;
@@ -252,10 +281,8 @@ function HomeContent() {
 
   const handleDownload = () => {
     if (!dbmlInput) return;
-    const blob = new Blob([dbmlInput], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
+    a.href = URL.createObjectURL(new Blob([dbmlInput], { type: 'text/plain' }));
     a.download = `${schemaName || 'schema'}.dbml`;
     a.click();
   };
@@ -349,10 +376,10 @@ function HomeContent() {
                 </div>
               </div>
             </div>
-            <div onMouseDown={startResizing} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group"><div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" /></div>
+            <div onMouseDown={() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group"><div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" /></div>
           </div>
           <div className={`flex-grow relative overflow-hidden bg-[#fdfdfd] ${activeTab !== 'canvas' ? 'hidden md:block' : 'block'}`}>
-            <VisualCanvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onEdgeUpdate={onEdgeUpdate} onTableColorChange={onTableColorChange} />
+            <VisualCanvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onEdgeUpdate={onEdgeUpdate} onNodeDragStop={onNodeDragStop} onTableColorChange={onTableColorChange} />
             {!dbmlInput && <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-900"><div className="flex flex-col items-center gap-4 text-slate-300"><Database size={60} className="opacity-10 text-slate-900" /><p className="text-sm font-bold tracking-widest opacity-20 uppercase">Empty Canvas</p></div></div>}
           </div>
         </div>
