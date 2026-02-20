@@ -9,7 +9,7 @@ export interface ParseResult {
 
 export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult => {
   if (!dbml || typeof dbml !== 'string') return { nodes: [], edges: [], error: null };
-  
+
   try {
     const database = Parser.parse(dbml, 'dbml');
     if (!database || !database.schemas || database.schemas.length === 0) {
@@ -22,11 +22,11 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
 
     const nodes: Node[] = tables.map((table: any, index: number) => {
       const existingNode = existingNodes.find(n => n.id === table.name);
-      
+
       return {
         id: table.name,
         type: 'dbTable',
-        data: { 
+        data: {
           name: table.name,
           color: table.headerColor || table.settings?.headercolor || table.settings?.headerColor,
           fields: table.fields.map((f: any) => ({
@@ -43,17 +43,17 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
             name: idx.name
           }))
         },
-        position: existingNode?.position || { 
-          x: (index % 3) * 350, 
-          y: Math.floor(index / 3) * (table.fields.length * 30 + 100) 
+        position: existingNode?.position || {
+          x: (index % 3) * 350,
+          y: Math.floor(index / 3) * (table.fields.length * 30 + 100)
         },
       };
     });
 
-    const edges: Edge[] = refs.map((ref: any, index: number) => {
+    const edges: Edge[] = refs.map((ref: any) => {
       const targetEndpoint = ref.endpoints[0];
       const sourceEndpoint = ref.endpoints[1];
-      
+
       const sourceFieldName = sourceEndpoint.fieldNames[0];
       const targetFieldName = targetEndpoint.fieldNames[0];
 
@@ -61,19 +61,19 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
       const relTarget = targetEndpoint.relation === '1' ? '1' : 'N';
       const label = `${relSource}:${relTarget}`;
 
-      // Try to find the edge in current state to see if user changed the side
-      const existingEdge = existingNodes.length > 0 ? null : null; // existingNodes are nodes, not edges
-      
-      // Look for a comment hint in the DBML line? 
-      // For now, DBRaw will store metadata in the edge ID if we want persistence across re-parses.
-      // But simpler: use the existing edges state if available to preserve sides.
-      
+      // Stable ID
+      const edgeId = `ref-${sourceEndpoint.tableName}.${sourceFieldName}-${targetEndpoint.tableName}.${targetFieldName}`;
+
       return {
-        id: `ref-${sourceEndpoint.tableName}.${sourceFieldName}-${targetEndpoint.tableName}.${targetFieldName}`,
+        id: edgeId,
         source: sourceEndpoint.tableName,
-        sourceHandle: `${sourceFieldName}-right`, // UI will update this via onEdgeUpdate
         target: targetEndpoint.tableName,
-        targetHandle: `${targetFieldName}-left`,  // UI will update this via onEdgeUpdate
+        sourceHandle: sourceFieldName, // Base name (no -left/-right suffix)
+        targetHandle: targetFieldName, // Base name (no -left/-right suffix)
+        data: {
+          sourceField: sourceFieldName, // Always the raw field name — used by calculateSmartEdges
+          targetField: targetFieldName,
+        },
         type: 'smoothstep',
         label: label,
         labelStyle: { fill: '#1e293b', fontWeight: 800, fontSize: 10, fontFamily: 'inherit' },
