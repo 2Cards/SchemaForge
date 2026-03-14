@@ -7,9 +7,12 @@ import { z } from 'zod';
 let lastRequestTime = 0;
 const MIN_INTERVAL_MS = 1000; // 1 request per second
 
-// Ratelimiter is created lazily inside the handler to ensure env vars are available
+// Ratelimiter is created lazily; returns null if Upstash env vars are not configured
 let ratelimit: Ratelimit | null = null;
-function getRatelimit() {
+function getRatelimit(): Ratelimit | null {
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+    return null;
+  }
   if (!ratelimit) {
     ratelimit = new Ratelimit({
       redis: Redis.fromEnv(),
@@ -42,12 +45,14 @@ export async function POST(req: Request) {
     // Get IP address for rate limiting
     const ip = req.headers.get('x-forwarded-for') ?? '127.0.0.1';
 
-    const { success } = await getRatelimit().limit(ip);
-
-    if (!success) {
-      return NextResponse.json({
-        error: 'Rate limit exceeded. Please try again later.'
-      }, { status: 429 });
+    const rl = getRatelimit();
+    if (rl) {
+      const { success } = await rl.limit(ip);
+      if (!success) {
+        return NextResponse.json({
+          error: 'Rate limit exceeded. Please try again later.'
+        }, { status: 429 });
+      }
     }
 
     const bodyResult = GenerateRequestSchema.safeParse(await req.json());
