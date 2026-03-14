@@ -7,6 +7,39 @@ export interface ParseResult {
   error: string | null;
 }
 
+interface DbmlField {
+  name: string;
+  type: { type_name: string };
+  pk: boolean;
+  unique: boolean;
+  not_null: boolean;
+  dbdefault: unknown;
+}
+
+interface DbmlIndex {
+  columns: Array<{ value: string }>;
+  unique: boolean;
+  name: string | null;
+}
+
+interface DbmlTable {
+  name: string;
+  fields: DbmlField[];
+  indexes?: DbmlIndex[];
+  headerColor?: string;
+  settings?: { headercolor?: string; headerColor?: string };
+}
+
+interface DbmlEndpoint {
+  tableName: string;
+  fieldNames: string[];
+  relation: string;
+}
+
+interface DbmlRef {
+  endpoints: DbmlEndpoint[];
+}
+
 export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult => {
   if (!dbml || typeof dbml !== 'string') return { nodes: [], edges: [], error: null };
 
@@ -17,10 +50,10 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
     }
 
     const schema = database.schemas[0];
-    const tables = schema.tables || [];
-    const refs = schema.refs || [];
+    const tables: DbmlTable[] = schema.tables || [];
+    const refs: DbmlRef[] = schema.refs || [];
 
-    const nodes: Node[] = tables.map((table: any, index: number) => {
+    const nodes: Node[] = tables.map((table, index) => {
       const existingNode = existingNodes.find(n => n.id === table.name);
 
       return {
@@ -29,7 +62,7 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
         data: {
           name: table.name,
           color: table.headerColor || table.settings?.headercolor || table.settings?.headerColor,
-          fields: table.fields.map((f: any) => ({
+          fields: table.fields.map((f) => ({
             name: f.name,
             type: f.type.type_name,
             pk: f.pk,
@@ -37,8 +70,8 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
             notNull: f.not_null,
             dbdefault: f.dbdefault,
           })),
-          indexes: table.indexes?.map((idx: any) => ({
-            columns: idx.columns.map((c: any) => c.value),
+          indexes: table.indexes?.map((idx) => ({
+            columns: idx.columns.map((c) => c.value),
             unique: idx.unique,
             name: idx.name
           }))
@@ -50,7 +83,8 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
       };
     });
 
-    const edges: Edge[] = refs.map((ref: any) => {
+    const edges: Edge[] = refs.flatMap((ref) => {
+      if (ref.endpoints.length < 2) return [];
       const targetEndpoint = ref.endpoints[0];
       const sourceEndpoint = ref.endpoints[1];
 
@@ -64,7 +98,7 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
       // Stable ID
       const edgeId = `ref-${sourceEndpoint.tableName}.${sourceFieldName}-${targetEndpoint.tableName}.${targetFieldName}`;
 
-      return {
+      return [{
         id: edgeId,
         source: sourceEndpoint.tableName,
         target: targetEndpoint.tableName,
@@ -87,13 +121,13 @@ export const parseDBML = (dbml: string, existingNodes: Node[] = []): ParseResult
           height: 15,
           color: '#1e293b',
         },
-      };
+      }];
     });
 
     return { nodes, edges, error: null };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Parsing error:', error);
-    const message = error.message || 'Syntax error in DBML code';
+    const message = error instanceof Error ? error.message : 'Syntax error in DBML code';
     return { nodes: [], edges: [], error: message };
   }
 };

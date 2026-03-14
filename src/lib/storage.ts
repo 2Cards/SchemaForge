@@ -77,8 +77,14 @@ Ref: users.id < comments.user_id`;
 export const storage = {
   getSchemas: (): Schema[] => {
     if (typeof window === 'undefined') return [];
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      console.error('[storage] Corrupted schema data in localStorage, resetting.');
+      localStorage.removeItem(STORAGE_KEY);
+      return [];
+    }
   },
 
   saveSchema: (schema: Schema) => {
