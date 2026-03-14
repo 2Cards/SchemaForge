@@ -8,20 +8,29 @@ import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider, useReactFl
 import Editor from 'react-simple-code-editor';
 import { toPng } from 'html-to-image';
 import dagre from 'dagre';
-// @ts-ignore
-import { highlight, languages } from 'prismjs/components/prism-core';
+import Prism from 'prismjs';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-sql';
 
 import {
   Loader2, Database, Trash2,
-  Code, Sparkles, AlertCircle, PanelLeftClose, PanelLeftOpen, PencilLine, FilePlus, Download,
+  Code, Sparkles, AlertCircle, PencilLine, FilePlus, Download,
   Menu, X, Eye, Image as ImageIcon, Wand2, Terminal
 } from 'lucide-react';
 
+const LAYOUT_CONFIG = {
+  dagre: { nodesep: 100, ranksep: 200 },
+  nodeWidth: 250,
+  nodeFieldHeight: 30,
+  nodeHeaderHeight: 80,
+  panel: { initial: 450, min: 300, max: 800 },
+  saveDebounceMsec: 1500,
+  fitViewPadding: 0.2,
+} as const;
+
 const dbmlHighlight = (code: string) => {
-  return highlight(code, {
-    ...languages.sql,
+  return Prism.highlight(code, {
+    ...Prism.languages.sql,
     'keyword': /\b(Table|Ref|Enum|indexes|Project|Note|as|pk|unique|not null|increment|headercolor)\b/i,
     'string': /(['"])(?:(?!\1)[^\\\r\n]|\\.)*\1/,
     'comment': /\/\/.*|(?:\/\*[\s\S]*?\*\/)/,
@@ -36,6 +45,8 @@ interface EdgeHandleMetadata {
   th?: string | null;
 }
 
+type LayoutData = NonNullable<Schema['layout']>;
+
 export default function Home() {
   return (
     <ReactFlowProvider>
@@ -48,16 +59,20 @@ function HomeContent() {
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [currentSchema, setCurrentSchema] = useState<Schema | null>(null);
   const [userInput, setUserInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [dbmlInput, setDbmlInput] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [schemaName, setSchemaName] = useState('');
   const [activeTab, setActiveTab] = useState<MobileTab>('prompt');
   const [isMobile, setIsMobile] = useState(false);
+  const [isCreatingSchema, setIsCreatingSchema] = useState(false);
+  const [newSchemaName, setNewSchemaName] = useState('');
 
-  const [leftPanelWidth, setLeftPanelWidth] = useState(450);
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(LAYOUT_CONFIG.panel.initial);
   const isResizing = useRef(false);
   const isInitialLoad = useRef(true);
 
@@ -107,21 +122,32 @@ function HomeContent() {
     const edgesToLayout = currentEdges || edges;
     if (nodesToLayout.length === 0) return;
     const g = new dagre.graphlib.Graph();
-    g.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 200 });
+    g.setGraph({ rankdir: 'LR', nodesep: LAYOUT_CONFIG.dagre.nodesep, ranksep: LAYOUT_CONFIG.dagre.ranksep });
     g.setDefaultEdgeLabel(() => ({}));
-    nodesToLayout.forEach((node) => { g.setNode(node.id, { width: 250, height: node.data.fields.length * 30 + 80 }); });
+    nodesToLayout.forEach((node) => {
+      g.setNode(node.id, {
+        width: LAYOUT_CONFIG.nodeWidth,
+        height: node.data.fields.length * LAYOUT_CONFIG.nodeFieldHeight + LAYOUT_CONFIG.nodeHeaderHeight,
+      });
+    });
     edgesToLayout.forEach((edge) => { g.setEdge(edge.source, edge.target); });
     dagre.layout(g);
     const layoutedNodes = nodesToLayout.map((node) => {
       const nodeWithPosition = g.node(node.id);
-      return { ...node, position: { x: nodeWithPosition.x - 125, y: nodeWithPosition.y - 40 } };
+      return {
+        ...node,
+        position: {
+          x: nodeWithPosition.x - LAYOUT_CONFIG.nodeWidth / 2,
+          y: nodeWithPosition.y - LAYOUT_CONFIG.nodeHeaderHeight / 2,
+        },
+      };
     });
     setNodes(layoutedNodes);
     setEdges(calculateSmartEdges(edgesToLayout, layoutedNodes));
-    setTimeout(() => fitView({ padding: 0.2, duration: 800 }), 100);
+    setTimeout(() => fitView({ padding: LAYOUT_CONFIG.fitViewPadding, duration: 800 }), 100);
   }, [nodes, edges, setNodes, setEdges, fitView, calculateSmartEdges]);
 
-  const onConnect = useCallback((params: any) => {
+  const onConnect = useCallback((params: Connection) => {
     const { source, sourceHandle, target, targetHandle } = params;
     if (!source || !sourceHandle || !target || !targetHandle) return;
     const sourceField = sourceHandle.split('-')[0];
@@ -197,7 +223,7 @@ function HomeContent() {
     const savedHandles = (layout.edgeHandles || {}) as Record<string, EdgeHandleMetadata>;
     setNodes(layoutNodes);
     setEdges(calculateSmartEdges(parsedEdges, layoutNodes, savedHandles));
-    setTimeout(() => fitView({ padding: 0.2 }), 50);
+    setTimeout(() => fitView({ padding: LAYOUT_CONFIG.fitViewPadding }), 50);
   }, [currentSchema?.id, calculateSmartEdges]);
 
   useEffect(() => {
@@ -226,10 +252,11 @@ function HomeContent() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!currentSchema) return;
-    const layout: any = {};
-    nodes.forEach(n => { layout[n.id] = n.position; });
-    layout.edgeHandles = {};
-    edges.forEach(e => { layout.edgeHandles[e.id] = { sh: e.sourceHandle, th: e.targetHandle }; });
+    const nodePositions: Record<string, { x: number; y: number }> = {};
+    nodes.forEach(n => { nodePositions[n.id] = n.position; });
+    const edgeHandles: Record<string, { sh: string; th: string }> = {};
+    edges.forEach(e => { edgeHandles[e.id] = { sh: e.sourceHandle ?? '', th: e.targetHandle ?? '' }; });
+    const layout = { ...nodePositions, edgeHandles } as LayoutData;
     const hasChanges = dbmlInput !== currentSchema.dbml || schemaName !== currentSchema.name || JSON.stringify(layout) !== JSON.stringify(currentSchema.layout || {});
     if (!hasChanges) return;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -240,7 +267,7 @@ function HomeContent() {
       setSchemas(storage.getSchemas());
       setCurrentSchema(updatedSchema);
       setIsSaving(false);
-    }, 1500);
+    }, LAYOUT_CONFIG.saveDebounceMsec);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [dbmlInput, schemaName, nodes, edges]);
 
@@ -249,7 +276,7 @@ function HomeContent() {
     if (!isResizing.current) return;
     const sidebarWidth = isSidebarOpen ? 256 : 0;
     const newWidth = e.clientX - sidebarWidth;
-    if (newWidth > 300 && newWidth < 800) setLeftPanelWidth(newWidth);
+    if (newWidth > LAYOUT_CONFIG.panel.min && newWidth < LAYOUT_CONFIG.panel.max) setLeftPanelWidth(newWidth);
   }, [isSidebarOpen]);
 
   useEffect(() => {
@@ -259,18 +286,31 @@ function HomeContent() {
   }, [resize, stopResizing]);
 
   const handleNewSchema = () => {
-    const name = window.prompt('New Sketch Name', 'Untitled Sketch') || 'New Sketch';
+    setNewSchemaName('Untitled Sketch');
+    setIsCreatingSchema(true);
+  };
+
+  const handleConfirmNewSchema = () => {
+    const name = newSchemaName.trim() || 'Untitled Sketch';
     const newSchema: Schema = { id: Date.now().toString(), name, dbml: '', createdAt: Date.now(), updatedAt: Date.now() };
     storage.saveSchema(newSchema);
     const updated = storage.getSchemas();
     setSchemas(updated);
     setCurrentSchema(newSchema);
+    setIsCreatingSchema(false);
+    setNewSchemaName('');
     if (isMobile) setIsSidebarOpen(false);
+  };
+
+  const handleCancelNewSchema = () => {
+    setIsCreatingSchema(false);
+    setNewSchemaName('');
   };
 
   const handleGenerate = async () => {
     if (!userInput) return;
-    setIsLoading(true);
+    setIsGenerating(true);
+    setGenerateError(null);
     try {
       const res = await fetch('/api/generate', { method: 'POST', body: JSON.stringify({ prompt: userInput, currentDbml: dbmlInput }) });
       const data = await res.json();
@@ -278,8 +318,12 @@ function HomeContent() {
         setDbmlInput(data.dbml.replace(/```dbml|```/g, '').trim());
         setUserInput('');
         if (isMobile) setActiveTab('canvas');
+      } else {
+        setGenerateError(data.error ?? 'Generation failed. Please try again.');
       }
-    } catch (err) { } finally { setIsLoading(false); }
+    } catch (err: unknown) {
+      setGenerateError(err instanceof Error ? err.message : 'Generation failed. Please try again.');
+    } finally { setIsGenerating(false); }
   };
 
   const handleDelete = (id: string) => {
@@ -303,8 +347,8 @@ function HomeContent() {
     const element = document.querySelector('.react-flow') as HTMLElement;
     if (!element) return;
     try {
-      setIsLoading(true);
-      await fitView({ padding: 0.2 });
+      setIsExporting(true);
+      await fitView({ padding: LAYOUT_CONFIG.fitViewPadding });
       await new Promise(resolve => setTimeout(resolve, 100));
       const dataUrl = await toPng(element, {
         backgroundColor: '#fdfdfd',
@@ -316,7 +360,9 @@ function HomeContent() {
       a.setAttribute('download', `${schemaName || 'schema'}.png`);
       a.setAttribute('href', dataUrl);
       a.click();
-    } catch (err) { } finally { setIsLoading(false); }
+    } catch (err: unknown) {
+      console.error('PNG export failed:', err instanceof Error ? err.message : err);
+    } finally { setIsExporting(false); }
   };
 
   return (
@@ -327,7 +373,24 @@ function HomeContent() {
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1 text-slate-900"><X size={20} /></button>
         </div>
         <div className="flex-grow overflow-y-auto p-3 space-y-4">
-          <button onClick={handleNewSchema} className="w-full py-2 px-4 border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-white rounded-xl text-xs font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2"><FilePlus size={14} /> New Sketch</button>
+          {isCreatingSchema ? (
+            <div className="w-full border-2 border-slate-900 rounded-xl bg-white shadow-[2px_2px_0_0_rgba(0,0,0,1)] p-2 space-y-2">
+              <input
+                autoFocus
+                value={newSchemaName}
+                onChange={(e) => setNewSchemaName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmNewSchema(); if (e.key === 'Escape') handleCancelNewSchema(); }}
+                placeholder="Sketch name..."
+                className="w-full text-xs font-bold border-2 border-slate-200 px-2 py-1.5 outline-none focus:border-slate-900 rounded-lg"
+              />
+              <div className="flex gap-1">
+                <button onClick={handleConfirmNewSchema} className="flex-1 py-1.5 text-[10px] font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-colors">Create</button>
+                <button onClick={handleCancelNewSchema} className="flex-1 py-1.5 text-[10px] font-bold border-2 border-slate-200 rounded-lg hover:border-slate-400 transition-colors">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={handleNewSchema} className="w-full py-2 px-4 border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-white rounded-xl text-xs font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2"><FilePlus size={14} /> New Sketch</button>
+          )}
           <div className="px-2 pt-2">
             <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Saved Sketches</h2>
             <div className="space-y-2">
@@ -351,7 +414,7 @@ function HomeContent() {
           </div>
           <div className="flex items-center gap-2 font-sans ml-2 shrink-0">
             <button onClick={() => handleAutoLayout()} title="Auto-layout schema" className="p-2 md:px-3 md:py-1.5 bg-indigo-50 border-2 border-slate-900 hover:bg-indigo-100 text-slate-900 text-xs font-bold rounded-lg shadow-[2px_2px_0_0_rgba(0,0,0,1)] transition-all"><Wand2 size={16} className="md:mr-2 inline" /><span className="hidden md:inline">Magic</span></button>
-            <button onClick={handleExportImage} title="Export to PNG" className="p-2 md:px-3 md:py-1.5 bg-white border-2 border-slate-900 hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg shadow-[2px_2px_0_0_rgba(0,0,0,1)] transition-all"><ImageIcon size={16} className="md:mr-2 inline" /><span className="hidden md:inline">PNG</span></button>
+            <button onClick={handleExportImage} disabled={isExporting} title="Export to PNG" className="p-2 md:px-3 md:py-1.5 bg-white border-2 border-slate-900 hover:bg-slate-50 text-slate-900 text-xs font-bold rounded-lg shadow-[2px_2px_0_0_rgba(0,0,0,1)] transition-all disabled:opacity-50">{isExporting ? <Loader2 size={16} className="animate-spin inline md:mr-2" /> : <ImageIcon size={16} className="md:mr-2 inline" />}<span className="hidden md:inline">PNG</span></button>
             <button onClick={handleDownload} title="Export DBML" className="p-2 md:px-4 md:py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-[2px_2px_0_0_rgba(0,0,0,1)] transition-all"><Download size={16} className="md:mr-2 inline" /><span className="hidden md:inline">DBML</span></button>
           </div>
         </nav>
@@ -383,9 +446,15 @@ function HomeContent() {
               <div className={`${activeTab === 'code' ? 'hidden md:block' : 'block'} relative shrink-0`}>
                 <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1"><Sparkles size={12} /><span>AI Architect</span></div>
                 <div className="relative">
-                  <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Explain changes (e.g. 'add a status field to users')..." className="w-full h-24 md:h-28 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0_0_rgba(0,0,0,0.05)] text-slate-900" />
-                  <button onClick={handleGenerate} disabled={isLoading || !userInput} className="absolute bottom-4 right-4 p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all disabled:opacity-30 shadow-[2px_2px_0_0_rgba(0,0,0,1)] border border-slate-900">{isLoading ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}</button>
+                  <textarea value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate(); }} placeholder="Explain changes (e.g. 'add a status field to users')..." className="w-full h-24 md:h-28 p-4 text-sm bg-white border-2 border-slate-900 rounded-xl focus:ring-0 outline-none placeholder:text-slate-300 resize-none shadow-[4px_4px_0_0_rgba(0,0,0,0.05)] text-slate-900" />
+                  <button onClick={handleGenerate} disabled={isGenerating || !userInput} className="absolute bottom-4 right-4 p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all disabled:opacity-30 shadow-[2px_2px_0_0_rgba(0,0,0,1)] border border-slate-900">{isGenerating ? <Loader2 className="animate-spin text-white" size={16} /> : <Sparkles className="text-white" size={16} />}</button>
                 </div>
+                {generateError && (
+                  <div className="mt-2 flex items-start gap-1.5 text-red-600">
+                    <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                    <span className="text-[11px] font-sans leading-tight">{generateError}</span>
+                  </div>
+                )}
               </div>
             </div>
             <div onMouseDown={() => { isResizing.current = true; document.body.style.cursor = 'col-resize'; }} className="hidden md:flex absolute top-0 -right-1.5 w-3 h-full cursor-col-resize hover:bg-indigo-500/10 active:bg-indigo-500/20 transition-colors z-30 items-center justify-center group"><div className="w-0.5 h-12 bg-slate-200 group-hover:bg-indigo-400 rounded-full transition-colors" /></div>

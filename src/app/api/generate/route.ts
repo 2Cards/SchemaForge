@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
+import { z } from 'zod';
 
 // Simple in-memory rate limiting for prototype
 let lastRequestTime = 0;
@@ -19,6 +20,11 @@ function getRatelimit() {
   }
   return ratelimit;
 }
+
+const GenerateRequestSchema = z.object({
+  prompt: z.string().min(1, 'Prompt cannot be empty').max(2000, 'Prompt must be 2000 characters or fewer'),
+  currentDbml: z.string().max(50000, 'Schema is too large').optional().default(''),
+});
 
 export async function POST(req: Request) {
   try {
@@ -44,7 +50,15 @@ export async function POST(req: Request) {
       }, { status: 429 });
     }
 
-    const { prompt, currentDbml } = await req.json();
+    const bodyResult = GenerateRequestSchema.safeParse(await req.json());
+    if (!bodyResult.success) {
+      return NextResponse.json(
+        { error: 'Invalid request', details: bodyResult.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { prompt, currentDbml } = bodyResult.data;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -53,13 +67,13 @@ export async function POST(req: Request) {
 
     const systemPrompt = `
       You are a database architect. Your task is to generate or update a DBML (Database Markup Language) schema based on user request.
-      
+
       CRITICAL RULES:
       1. Return ONLY the valid DBML code.
       2. Do NOT include explanations, markdown code blocks, or any other text.
       3. If 'currentDbml' is provided, UPDATE it by adding new tables/fields or modifying existing ones as requested. Do NOT delete unrelated parts of the existing schema.
       4. Use PostgreSQL naming conventions.
-      
+
       Current Schema Context:
       ${currentDbml || 'Empty'}
     `;
@@ -94,7 +108,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ dbml });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
