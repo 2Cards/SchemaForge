@@ -9,10 +9,7 @@ const MIN_INTERVAL_MS = 1000; // 1 request per second
 
 // Ratelimiter is created lazily; returns null if Upstash env vars are not configured
 let ratelimit: Ratelimit | null = null;
-function getRatelimit(): Ratelimit | null {
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-    return null;
-  }
+function getRatelimit(): Ratelimit {
   if (!ratelimit) {
     ratelimit = new Ratelimit({
       redis: Redis.fromEnv(),
@@ -45,13 +42,7 @@ export async function POST(req: Request) {
     // Get IP address for rate limiting
     const ip = req.headers.get('x-forwarded-for') ?? '127.0.0.1';
 
-    const rl = getRatelimit();
-    if (!rl) {
-      return NextResponse.json({
-        error: 'Rate limiter not configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.'
-      }, { status: 503 });
-    }
-    const { success } = await rl.limit(ip);
+    const { success } = await getRatelimit().limit(ip);
     if (!success) {
       return NextResponse.json({
         error: 'Rate limit exceeded. Please try again later.'
